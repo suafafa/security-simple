@@ -1,0 +1,1138 @@
+package com.example.security.filters;
+
+import com.example.security.models.ParamRule;
+import com.example.security.models.ServletPolicyRule;
+import com.example.security.models.ServletSecurityConfig;
+import com.example.security.utils.SecurityUtils;
+import com.example.security.validators.MethodPolicyValidator;
+import com.example.security.validators.ParamPolicyValidator;
+import com.example.security.validators.PolicyValidator;
+import com.example.security.validators.RefererPolicyValidator;
+import com.example.security.validators.ValidationResult;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.reflect.TypeToken;
+import org.apache.commons.lang3.StringUtils;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.ConfigurationPolicy;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Modified;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
+import org.osgi.service.metatype.annotations.AttributeDefinition;
+import org.osgi.service.metatype.annotations.Designate;
+import org.osgi.service.metatype.annotations.ObjectClassDefinition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.servlet.Filter;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
+import javax.servlet.Servlet;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
+
+/**
+ * 타겟 기반 서블릿 보안 정책 검증을 수행하는 경량화된 AEM 6.5 Sling 서블릿 필터입니다.
+ * 3개의 핵심 PolicyValidator 체인을 순차적으로 실행합니다:
+ * 1. RefererPolicyValidator: 기본 도메인(abc.com) 및 정책별 허용 Referer(allowedReferrers) 검증
+ * 2. MethodPolicyValidator: 허용된 HTTP 메소드 검증 (GET, POST 등)
+ * 3. ParamPolicyValidator: 파라미터 필수 여부, 미정의 파라미터 차단, 길이/정규식 패턴 및 Path Traversal/SQLi/XSS 검증
+ */
+@Component(
+        service = Filter.class,
+        immediate = true,
+        configurationPolicy = ConfigurationPolicy.OPTIONAL,
+        property = {
+                "service.description=AEM 6.5 Lightweight Security Filter (Referer, Method, Param)",
+                "service.vendor=AEM Engineering",
+                "sling.filter.scope=REQUEST",
+                "sling.filter.pattern=(/aemapi/.*|/sysapi/.*)",
+                "service.ranking:Integer=10000"
+        }
+)
+@Designate(ocd = SecurityFilter.Config.class)
+public class SecurityFilter implements Filter {
+
+    public static final String DEFAULT_FILTER_PATTERN = "(/aemapi/.*|/sysapi/.*)";
+
+    @ObjectClassDefinition(
+            name = "AEM Lightweight Security Filter Configuration",
+            description = "OSGi .config Configuration for Lightweight Servlet Security Filter (Referer, Method, Param)"
+    )
+    public @interface Config {
+        @AttributeDefinition(
+                name = "Filter Enabled",
+                description = "Enable or disable servlet policy validation"
+        )
+        boolean enabled() default true;
+
+        @AttributeDefinition(
+                name = "Sling Filter Pattern",
+                description = "Regex pattern matching request paths and target servlets handled by this filter"
+        )
+        String sling_filter_pattern() default "(/aemapi/.*|/sysapi/.*)";
+
+        @AttributeDefinition(name = "Enable Referer Validator", description = "Globally enable/disable Referer validator")
+        boolean validator_referer_enabled() default true;
+
+        @AttributeDefinition(name = "Enable Method Validator", description = "Globally enable/disable Method validator")
+        boolean validator_method_enabled() default true;
+
+        @AttributeDefinition(name = "Enable Param Validator", description = "Globally enable/disable Param validator")
+        boolean validator_param_enabled() default true;
+
+        @AttributeDefinition(name = "Default Policy: Enabled", description = "Enable baseline default security policy for servlets")
+        boolean default_enabled() default true;
+
+        @AttributeDefinition(name = "Default Policy: Allowed Referrer", description = "Default trusted referrer domain (e.g. abc.com)")
+        String default_referrer() default "abc.com";
+
+        @AttributeDefinition(name = "Default Policy: Allowed HTTP Methods", description = "Default allowed HTTP methods (e.g. GET, POST)")
+        String[] default_methods() default {"GET", "POST"};
+
+        @AttributeDefinition(name = "Default Policy: Block SQL/JCR Injection", description = "Automatically block SQL/JCR2 injection patterns in parameters")
+        boolean default_blockSqlInjection() default true;
+
+        @AttributeDefinition(name = "Default Policy: Block XSS", description = "Automatically block Cross-Site Scripting (XSS) patterns in parameters")
+        boolean default_blockXss() default true;
+
+        @AttributeDefinition(name = "Default Policy: Allow Undefined Params", description = "Allow request parameters not explicitly listed in params rules")
+        boolean default_allowUndefinedParams() default false;
+
+        @AttributeDefinition(name = "Default Policy: Common Parameter Rules (DSL)", description = "Common parameter rules in DSL format (e.g. page:optional:digits:5)")
+        String[] default_params() default {
+                "page:optional:digits:5",
+                "size:optional:digits:4",
+                "sort:optional:alnum:30",
+                "order:optional:asc|desc:4",
+                "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10",
+                "keyword:optional:100"
+        };
+    }
+
+    private static final Logger LOG = LoggerFactory.getLogger(SecurityFilter.class);
+    private static final Gson GSON = new Gson();
+    private static final ServletPolicyRule REJECTED_POLICY = new ServletPolicyRule();
+
+    private volatile boolean enabled = true;
+    private volatile String filterPattern = DEFAULT_FILTER_PATTERN;
+    private volatile Pattern compiledFilterPattern = Pattern.compile(DEFAULT_FILTER_PATTERN);
+    private volatile ServletSecurityConfig servletSecurityConfig;
+
+    // 동적으로 바인딩된 서블릿 추적 맵 (서블릿 인스턴스 -> OSGi 속성 맵)
+    private final Map<Servlet, Map<String, Object>> boundServlets = new ConcurrentHashMap<>();
+
+    // 핵심 3대 정책 검증기 (Referer -> Method -> Param)
+    private final RefererPolicyValidator refererPolicyValidator = new RefererPolicyValidator();
+    private final MethodPolicyValidator methodPolicyValidator = new MethodPolicyValidator();
+    private final ParamPolicyValidator paramPolicyValidator = new ParamPolicyValidator();
+
+    private final List<PolicyValidator> validators = Collections.unmodifiableList(Arrays.asList(
+            refererPolicyValidator,
+            methodPolicyValidator,
+            paramPolicyValidator
+    ));
+
+    @Reference(
+            service = Servlet.class,
+            cardinality = ReferenceCardinality.MULTIPLE,
+            policy = ReferencePolicy.DYNAMIC,
+            bind = "bindServlet",
+            unbind = "unbindServlet"
+    )
+    public void bindServlet(final Servlet servlet, final Map<String, Object> properties) {
+        if (servlet == null || properties == null) {
+            return;
+        }
+
+        // sling.filter.pattern과 경로 또는 resourceType이 일치하는 서블릿만 바인딩
+        if (!isApplicableServlet(properties)) {
+            return;
+        }
+
+        boundServlets.put(servlet, properties);
+
+        if (servletSecurityConfig != null) {
+            List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(properties, servletSecurityConfig.getDefaultPolicy());
+            for (ServletPolicyRule rule : rules) {
+                if (matchesFilterPattern(rule.getTarget())) {
+                    servletSecurityConfig.registerDynamicPolicy(rule);
+                }
+            }
+        }
+    }
+
+    public void unbindServlet(final Servlet servlet, final Map<String, Object> properties) {
+        if (servlet == null) {
+            return;
+        }
+
+        boolean wasBound = boundServlets.containsKey(servlet);
+        Map<String, Object> props = properties != null ? properties : boundServlets.remove(servlet);
+        boundServlets.remove(servlet);
+
+        if (!wasBound && (props == null || !isApplicableServlet(props))) {
+            return;
+        }
+
+        if (servletSecurityConfig != null && props != null) {
+            List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, null);
+            for (ServletPolicyRule rule : rules) {
+                if (matchesFilterPattern(rule.getTarget())) {
+                    servletSecurityConfig.unregisterDynamicPolicy(rule.getTarget());
+                }
+            }
+        }
+    }
+
+    /**
+     * 서블릿의 경로 또는 resourceType이 sling.filter.pattern과 일치하는지 판별합니다.
+     */
+    public boolean isApplicableServlet(final Map<String, Object> properties) {
+        if (properties == null || properties.isEmpty()) {
+            return false;
+        }
+        List<String> targets = extractServletTargets(properties);
+        if (targets.isEmpty()) {
+            return false;
+        }
+        for (String target : targets) {
+            if (matchesFilterPattern(target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 대상 경로 또는 resourceType이 컴파일된 sling.filter.pattern 정규식과 일치하는지 검사합니다.
+     */
+    public boolean matchesFilterPattern(final String target) {
+        if (StringUtils.isBlank(target)) {
+            return false;
+        }
+        Pattern pattern = this.compiledFilterPattern;
+        if (pattern == null) {
+            return false;
+        }
+        String cleanTarget = target.trim();
+        if (pattern.matcher(cleanTarget).matches()) {
+            return true;
+        }
+        if (!cleanTarget.startsWith("/") && pattern.matcher("/" + cleanTarget).matches()) {
+            return true;
+        }
+        if (cleanTarget.contains("/components/") && DEFAULT_FILTER_PATTERN.equals(this.filterPattern)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * OSGi 속성에서 서블릿 타겟 목록을 추출합니다.
+     */
+    public List<String> extractServletTargets(final Map<String, Object> properties) {
+        if (properties == null || properties.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> targets = new ArrayList<>();
+        targets.addAll(extractStringListFromMap(properties, "sling.servlet.paths"));
+        targets.addAll(extractStringListFromMap(properties, "sling.servlet.resourceTypes"));
+        if (targets.isEmpty()) {
+            targets.addAll(extractStringListFromMap(properties, "service.description"));
+        }
+        return targets;
+    }
+
+    private static List<String> extractStringListFromMap(final Map<String, Object> map, final String key) {
+        if (map == null || !map.containsKey(key)) {
+            return Collections.emptyList();
+        }
+        Object val = map.get(key);
+        if (val instanceof String[]) {
+            List<String> list = new ArrayList<>();
+            for (String s : (String[]) val) {
+                if (StringUtils.isNotBlank(s)) {
+                    list.add(s.trim());
+                }
+            }
+            return list;
+        } else if (val instanceof Collection) {
+            List<String> list = new ArrayList<>();
+            for (Object item : (Collection<?>) val) {
+                if (item != null && StringUtils.isNotBlank(item.toString())) {
+                    list.add(item.toString().trim());
+                }
+            }
+            return list;
+        } else if (val instanceof String) {
+            String s = (String) val;
+            if (StringUtils.isNotBlank(s)) {
+                if (s.contains(",")) {
+                    String[] parts = s.split(",");
+                    List<String> list = new ArrayList<>(parts.length);
+                    for (String part : parts) {
+                        if (StringUtils.isNotBlank(part)) {
+                            list.add(part.trim());
+                        }
+                    }
+                    return list;
+                }
+                return Collections.singletonList(s.trim());
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    public synchronized void updateFilterPattern(final String newPattern) {
+        if (StringUtils.isBlank(newPattern)) {
+            return;
+        }
+        try {
+            Pattern compiled = Pattern.compile(newPattern.trim());
+            this.filterPattern = newPattern.trim();
+            this.compiledFilterPattern = compiled;
+            LOG.info("Updated SecurityFilter pattern to: {}", this.filterPattern);
+
+            // 새로운 필터 패턴에 맞춰 기존에 바인딩된 서블릿들을 재평가
+            if (!boundServlets.isEmpty()) {
+                Iterator<Map.Entry<Servlet, Map<String, Object>>> iterator = boundServlets.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Servlet, Map<String, Object>> entry = iterator.next();
+                    Map<String, Object> props = entry.getValue();
+                    if (!isApplicableServlet(props)) {
+                        if (servletSecurityConfig != null) {
+                            List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, null);
+                            for (ServletPolicyRule rule : rules) {
+                                servletSecurityConfig.unregisterDynamicPolicy(rule.getTarget());
+                            }
+                        }
+                        iterator.remove();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to compile sling.filter.pattern regex: {}", newPattern, e);
+        }
+    }
+
+    public String getFilterPattern() {
+        return filterPattern;
+    }
+
+    public Pattern getCompiledFilterPattern() {
+        return compiledFilterPattern;
+    }
+
+    public Map<Servlet, Map<String, Object>> getBoundServlets() {
+        return Collections.unmodifiableMap(boundServlets);
+    }
+
+    @Activate
+    @Modified
+    public void activate(final Config config, final Map<String, Object> properties) {
+        LOG.debug("SecurityFilter activate/modified lifecycle invoked.");
+
+        String configuredPattern = null;
+        if (config != null && StringUtils.isNotBlank(config.sling_filter_pattern())) {
+            configuredPattern = config.sling_filter_pattern();
+        }
+        if (properties != null) {
+            Object patternProp = properties.get("sling.filter.pattern");
+            if (patternProp instanceof String && StringUtils.isNotBlank((String) patternProp)) {
+                configuredPattern = (String) patternProp;
+            }
+        }
+        if (StringUtils.isNotBlank(configuredPattern)) {
+            updateFilterPattern(configuredPattern);
+        }
+
+        boolean isEnabled = config != null ? config.enabled() : true;
+
+        if (properties != null && properties.containsKey("enabled")) {
+            Object enObj = properties.get("enabled");
+            if (enObj instanceof Boolean) {
+                isEnabled = (Boolean) enObj;
+            } else if (enObj instanceof String) {
+                isEnabled = Boolean.parseBoolean((String) enObj);
+            }
+        }
+
+        if (config != null || hasOsgiDotConfigProperties(properties)) {
+            loadFromOsgiConfig(isEnabled, config, properties);
+        } else if (properties != null) {
+            parsePoliciesFromProperties(isEnabled, properties);
+        }
+
+        applyOsgiValidatorToggles(config, properties);
+
+        // 새로 로드된 defaultPolicy와 동적으로 바인딩된 모든 서블릿을 동기화
+        if (servletSecurityConfig != null && !boundServlets.isEmpty()) {
+            for (Map<String, Object> props : boundServlets.values()) {
+                if (isApplicableServlet(props)) {
+                    List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, servletSecurityConfig.getDefaultPolicy());
+                    for (ServletPolicyRule rule : rules) {
+                        if (matchesFilterPattern(rule.getTarget())) {
+                            servletSecurityConfig.registerDynamicPolicy(rule);
+                        }
+                    }
+                }
+            }
+        }
+
+        this.enabled = isEnabled;
+        logConfiguredPolicies();
+
+        LOG.info("SecurityFilter activated for AEM 6.5. Filter Enabled: {}, Filter Pattern: {}, Active Policies: {}",
+                enabled, filterPattern, servletSecurityConfig != null ? servletSecurityConfig.getPolicies().size() : 0);
+    }
+
+    private boolean hasOsgiDotConfigProperties(final Map<String, Object> properties) {
+        if (properties == null || properties.isEmpty()) {
+            return false;
+        }
+        for (String key : properties.keySet()) {
+            if (key != null && key.startsWith("default.")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 순수 OSGi .config 속성(default.* 및 validator.*.enabled)으로부터
+     * 직접 ServletSecurityConfig 및 defaultPolicy를 생성합니다.
+     */
+    private void loadFromOsgiConfig(final boolean isEnabled, final Config config, final Map<String, Object> properties) {
+        try {
+            Map<String, Object> props = properties != null ? properties : Collections.emptyMap();
+            ServletPolicyRule defaultRule = buildDefaultPolicyFromOsgiConfig(config, props);
+
+            List<ServletPolicyRule> policies = Collections.emptyList();
+            if (props.containsKey("policies")) {
+                policies = parsePolicyRuleList(props.get("policies"));
+            }
+
+            ServletSecurityConfig newConfig = new ServletSecurityConfig(isEnabled, policies);
+            newConfig.setDefaultPolicy(defaultRule);
+            if (StringUtils.isNotBlank(defaultRule.getDefaultReferrer())) {
+                newConfig.setDefaultReferrer(defaultRule.getDefaultReferrer());
+            }
+            newConfig.init();
+            this.servletSecurityConfig = newConfig;
+            LOG.info("Successfully loaded configuration from OSGi .config (defaultPolicy enabled={}, methods={}, defaultReferrer={}, params={})",
+                    defaultRule.isEnabled(), defaultRule.getMethods(), defaultRule.getDefaultReferrer(), defaultRule.getParams().keySet());
+        } catch (Exception e) {
+            handleConfigFailure("OSGi .config", e, isEnabled);
+        }
+    }
+
+    private ServletPolicyRule buildDefaultPolicyFromOsgiConfig(final Config config, final Map<String, Object> props) {
+        ServletPolicyRule rule = new ServletPolicyRule();
+        rule.setTarget("DEFAULT");
+
+        boolean defEnabled = config != null ? config.default_enabled() : true;
+        if (props.containsKey("default.enabled")) {
+            defEnabled = toBoolean(props.get("default.enabled"), defEnabled);
+        }
+        rule.setEnabled(defEnabled);
+
+        String defReferrer = getStringProp(props, "default.referrer",
+                config != null ? config.default_referrer() : "abc.com");
+        rule.setDefaultReferrer(defReferrer);
+
+        List<String> defMethods = getStringListProp(props, "default.methods",
+                config != null ? config.default_methods() : new String[]{"GET", "POST"});
+        if (!defMethods.isEmpty()) {
+            rule.setMethods(defMethods);
+        }
+
+        boolean defBlockSql = config != null ? config.default_blockSqlInjection() : true;
+        if (props.containsKey("default.blockSqlInjection")) {
+            defBlockSql = toBoolean(props.get("default.blockSqlInjection"), defBlockSql);
+        }
+        rule.setBlockSqlInjection(defBlockSql);
+
+        boolean defBlockXss = config != null ? config.default_blockXss() : true;
+        if (props.containsKey("default.blockXss")) {
+            defBlockXss = toBoolean(props.get("default.blockXss"), defBlockXss);
+        }
+        rule.setBlockXss(defBlockXss);
+
+        boolean defAllowUndefParams = config != null ? config.default_allowUndefinedParams() : false;
+        if (props.containsKey("default.allowUndefinedParams")) {
+            defAllowUndefParams = toBoolean(props.get("default.allowUndefinedParams"), defAllowUndefParams);
+        }
+        rule.setAllowUndefinedParams(defAllowUndefParams);
+
+        List<String> defParams = getStringListProp(props, "default.params",
+                config != null ? config.default_params() : new String[]{
+                        "page:optional:digits:5",
+                        "size:optional:digits:4",
+                        "sort:optional:alnum:30",
+                        "order:optional:asc|desc:4",
+                        "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10",
+                        "keyword:optional:100"
+                });
+        Map<String, ParamRule> paramRules = new LinkedHashMap<>();
+        for (String spec : defParams) {
+            if (StringUtils.isNotBlank(spec)) {
+                Map.Entry<String, ParamRule> entry = ServletPolicyRule.parseSimpleParamSpec(spec);
+                if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
+                    paramRules.put(entry.getKey().toLowerCase(), entry.getValue());
+                }
+            }
+        }
+        if (!paramRules.isEmpty()) {
+            rule.setParams(paramRules);
+        }
+
+        rule.init();
+        return rule;
+    }
+
+    private boolean toBoolean(final Object val, final boolean defaultVal) {
+        if (val instanceof Boolean) {
+            return (Boolean) val;
+        }
+        if (val instanceof String) {
+            String s = ((String) val).trim();
+            if (s.startsWith("B\"") && s.endsWith("\"")) {
+                s = s.substring(2, s.length() - 1);
+            }
+            return Boolean.parseBoolean(s);
+        }
+        return defaultVal;
+    }
+
+    private String getStringProp(final Map<String, Object> props, final String key, final String defaultVal) {
+        if (props != null && props.containsKey(key) && props.get(key) != null) {
+            String s = props.get(key).toString().trim();
+            if (s.startsWith("\"") && s.endsWith("\"") && s.length() >= 2) {
+                s = s.substring(1, s.length() - 1);
+            }
+            return s;
+        }
+        return defaultVal;
+    }
+
+    private List<String> getStringListProp(final Map<String, Object> props, final String key, final String[] defaultVal) {
+        List<String> list = new ArrayList<>();
+        if (props != null && props.containsKey(key) && props.get(key) != null) {
+            Object v = props.get(key);
+            if (v instanceof String[]) {
+                for (String s : (String[]) v) {
+                    if (StringUtils.isNotBlank(s)) {
+                        list.add(s.trim());
+                    }
+                }
+                return list;
+            } else if (v instanceof Collection<?>) {
+                for (Object item : (Collection<?>) v) {
+                    if (item != null && StringUtils.isNotBlank(item.toString())) {
+                        list.add(item.toString().trim());
+                    }
+                }
+                return list;
+            } else if (v instanceof String) {
+                String s = ((String) v).trim();
+                if (StringUtils.isNotBlank(s)) {
+                    for (String part : s.split(",")) {
+                        if (StringUtils.isNotBlank(part)) {
+                            list.add(part.trim());
+                        }
+                    }
+                }
+                return list;
+            }
+        }
+        if (defaultVal != null) {
+            for (String s : defaultVal) {
+                if (StringUtils.isNotBlank(s)) {
+                    list.add(s.trim());
+                }
+            }
+        }
+        return list;
+    }
+
+    private void parsePoliciesFromProperties(final boolean isEnabled, final Map<String, Object> properties) {
+        try {
+            ServletSecurityConfig parsedConfig = null;
+            JsonElement rootElement = toNormalizedJsonElement(properties);
+            if (rootElement != null && rootElement.isJsonObject()) {
+                JsonObject rootObj = rootElement.getAsJsonObject();
+                sanitizeRootConfigJsonObject(rootObj);
+                try {
+                    ServletSecurityConfig cfg = GSON.fromJson(rootObj, ServletSecurityConfig.class);
+                    if (cfg != null && ((cfg.getPolicies() != null && !cfg.getPolicies().isEmpty()) || cfg.getDefaultPolicy() != null)) {
+                        cfg.setEnabled(isEnabled);
+                        parsedConfig = cfg;
+                    }
+                } catch (Exception e) {
+                    LOG.debug("Direct root config deserialization fallback triggered: {}", e.getMessage());
+                }
+            }
+
+            if (parsedConfig == null) {
+                Object policiesObj = properties.get("policies");
+                List<ServletPolicyRule> policies = parsePolicyRuleList(policiesObj);
+                if (policies != null && !policies.isEmpty()) {
+                    parsedConfig = new ServletSecurityConfig(isEnabled, policies);
+                } else if (policiesObj != null || properties.containsKey("defaultPolicy")
+                        || properties.containsKey("default") || properties.containsKey("globalPolicy")) {
+                    parsedConfig = new ServletSecurityConfig(isEnabled, Collections.emptyList());
+                }
+            }
+
+            Object defPolicyObj = properties.get("defaultPolicy");
+            if (defPolicyObj == null) {
+                defPolicyObj = properties.get("default");
+            }
+            if (defPolicyObj == null) {
+                defPolicyObj = properties.get("globalPolicy");
+            }
+            if (defPolicyObj != null && parsedConfig != null && parsedConfig.getDefaultPolicy() == null) {
+                ServletPolicyRule defRule = parseSinglePolicyRule(defPolicyObj);
+                if (defRule != null) {
+                    parsedConfig.setDefaultPolicy(defRule);
+                }
+            }
+
+            Object validatorsObj = properties.get("validators");
+            if (validatorsObj != null && parsedConfig != null) {
+                JsonElement valElem = toNormalizedJsonElement(validatorsObj);
+                if (valElem != null && valElem.isJsonObject()) {
+                    for (Map.Entry<String, JsonElement> entry : valElem.getAsJsonObject().entrySet()) {
+                        try {
+                            parsedConfig.setValidatorEnabled(entry.getKey(), entry.getValue().getAsBoolean());
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            if (parsedConfig != null) {
+                parsedConfig.init();
+                this.servletSecurityConfig = parsedConfig;
+                LOG.info("Successfully loaded and initialized {} servlet security policies from OSGi properties.",
+                        parsedConfig.getPolicies() != null ? parsedConfig.getPolicies().size() : 0);
+            } else {
+                handleConfigFailure("OSGi properties", new IllegalArgumentException("Parsed configuration resulted in null"), isEnabled);
+            }
+        } catch (Exception e) {
+            handleConfigFailure("OSGi properties", e, isEnabled);
+        }
+    }
+
+    private void sanitizeRootConfigJsonObject(final JsonObject rootObj) {
+        String[] objectKeys = {"defaultPolicy", "default", "globalPolicy"};
+        for (String key : objectKeys) {
+            if (rootObj.has(key)) {
+                JsonElement el = rootObj.get(key);
+                if (el != null && el.isJsonArray() && el.getAsJsonArray().size() == 1 && el.getAsJsonArray().get(0).isJsonObject()) {
+                    rootObj.add(key, el.getAsJsonArray().get(0));
+                } else if (el == null || !el.isJsonObject()) {
+                    rootObj.remove(key);
+                }
+            }
+        }
+        if (rootObj.has("policies")) {
+            JsonElement el = rootObj.get("policies");
+            if (el != null && el.isJsonObject()) {
+                JsonArray arr = new JsonArray();
+                arr.add(el);
+                rootObj.add("policies", arr);
+            } else if (el == null || !el.isJsonArray()) {
+                rootObj.remove("policies");
+            }
+        }
+        String[] arrayKeys = {"disabledValidators", "skipValidators", "enabledValidators"};
+        for (String key : arrayKeys) {
+            if (rootObj.has(key)) {
+                JsonElement el = rootObj.get(key);
+                if (el != null && el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
+                    String str = el.getAsString().trim();
+                    JsonArray arr = new JsonArray();
+                    if (!str.isEmpty()) {
+                        for (String part : str.split(",")) {
+                            if (StringUtils.isNotBlank(part)) {
+                                arr.add(new JsonPrimitive(part.trim()));
+                            }
+                        }
+                    }
+                    rootObj.add(key, arr);
+                } else if (el == null || !el.isJsonArray()) {
+                    rootObj.remove(key);
+                }
+            }
+        }
+    }
+
+    private ServletPolicyRule parseSinglePolicyRule(final Object obj) {
+        if (obj == null) {
+            return null;
+        }
+        JsonElement elem = toNormalizedJsonElement(obj);
+        if (elem == null || elem.isJsonNull()) {
+            return null;
+        }
+        if (elem.isJsonArray() && elem.getAsJsonArray().size() == 1) {
+            elem = elem.getAsJsonArray().get(0);
+        }
+        if (elem.isJsonObject()) {
+            return GSON.fromJson(elem, ServletPolicyRule.class);
+        }
+        return null;
+    }
+
+    private List<ServletPolicyRule> parsePolicyRuleList(final Object policiesObj) {
+        if (policiesObj == null) {
+            return Collections.emptyList();
+        }
+        JsonElement elem = toNormalizedJsonElement(policiesObj);
+        if (elem == null || elem.isJsonNull()) {
+            return Collections.emptyList();
+        }
+        List<ServletPolicyRule> result = new ArrayList<>();
+        if (elem.isJsonArray()) {
+            for (JsonElement item : elem.getAsJsonArray()) {
+                JsonElement normalizedItem = item.isJsonPrimitive() && item.getAsJsonPrimitive().isString()
+                        ? toNormalizedJsonElement(item.getAsString())
+                        : item;
+                if (normalizedItem != null && normalizedItem.isJsonObject()) {
+                    ServletPolicyRule rule = GSON.fromJson(normalizedItem, ServletPolicyRule.class);
+                    if (rule != null) {
+                        result.add(rule);
+                    }
+                }
+            }
+        } else if (elem.isJsonObject()) {
+            ServletPolicyRule singleRule = GSON.fromJson(elem, ServletPolicyRule.class);
+            if (singleRule != null) {
+                result.add(singleRule);
+            }
+        }
+        return result;
+    }
+
+    private JsonElement toNormalizedJsonElement(final Object value) {
+        if (value == null) {
+            return JsonNull.INSTANCE;
+        }
+        if (value instanceof JsonElement) {
+            JsonElement el = (JsonElement) value;
+            if (el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
+                return parseJsonStringIfApplicable(el.getAsString());
+            } else if (el.isJsonArray()) {
+                JsonArray normalizedArr = new JsonArray();
+                for (JsonElement child : el.getAsJsonArray()) {
+                    normalizedArr.add(toNormalizedJsonElement(child));
+                }
+                return normalizedArr;
+            } else if (el.isJsonObject()) {
+                JsonObject normalizedObj = new JsonObject();
+                for (Map.Entry<String, JsonElement> entry : el.getAsJsonObject().entrySet()) {
+                    normalizedObj.add(entry.getKey(), toNormalizedJsonElement(entry.getValue()));
+                }
+                return normalizedObj;
+            }
+            return el;
+        }
+        if (value instanceof Boolean) {
+            return new JsonPrimitive((Boolean) value);
+        }
+        if (value instanceof Number) {
+            return new JsonPrimitive((Number) value);
+        }
+        if (value instanceof Character) {
+            return new JsonPrimitive((Character) value);
+        }
+        if (value instanceof String) {
+            return parseJsonStringIfApplicable((String) value);
+        }
+        if (value instanceof String[]) {
+            String[] arr = (String[]) value;
+            if (arr.length == 0) {
+                return new JsonArray();
+            }
+            if (arr.length == 1) {
+                JsonElement single = parseJsonStringIfApplicable(arr[0]);
+                if (single.isJsonArray() || single.isJsonObject()) {
+                    return single;
+                }
+                JsonArray jsonArray = new JsonArray();
+                jsonArray.add(single);
+                return jsonArray;
+            }
+            boolean allElementsAreObjects = true;
+            for (String s : arr) {
+                if (StringUtils.isNotBlank(s)) {
+                    String trimmed = s.trim();
+                    if (!(trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+                        allElementsAreObjects = false;
+                        break;
+                    }
+                }
+            }
+            if (!allElementsAreObjects) {
+                String joined = String.join("\n", arr).trim();
+                if ((joined.startsWith("[") && joined.endsWith("]")) || (joined.startsWith("{") && joined.endsWith("}"))) {
+                    try {
+                        JsonElement parsedJoined = GSON.fromJson(joined, JsonElement.class);
+                        if (parsedJoined != null && (parsedJoined.isJsonArray() || parsedJoined.isJsonObject())) {
+                            return toNormalizedJsonElement(parsedJoined);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            JsonArray jsonArray = new JsonArray();
+            for (String s : arr) {
+                if (s != null) {
+                    jsonArray.add(parseJsonStringIfApplicable(s));
+                }
+            }
+            return jsonArray;
+        }
+        if (value instanceof Map<?, ?>) {
+            JsonObject jsonObject = new JsonObject();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    jsonObject.add(String.valueOf(entry.getKey()), toNormalizedJsonElement(entry.getValue()));
+                }
+            }
+            return jsonObject;
+        }
+        if (value instanceof Collection<?>) {
+            Collection<?> col = (Collection<?>) value;
+            boolean allStrings = !col.isEmpty();
+            for (Object item : col) {
+                if (!(item instanceof String)) {
+                    allStrings = false;
+                    break;
+                }
+            }
+            if (allStrings) {
+                return toNormalizedJsonElement(col.toArray(new String[0]));
+            }
+            JsonArray jsonArray = new JsonArray();
+            for (Object item : col) {
+                if (item != null) {
+                    jsonArray.add(toNormalizedJsonElement(item));
+                }
+            }
+            return jsonArray;
+        }
+        if (value.getClass().isArray()) {
+            int length = java.lang.reflect.Array.getLength(value);
+            JsonArray jsonArray = new JsonArray();
+            for (int i = 0; i < length; i++) {
+                Object item = java.lang.reflect.Array.get(value, i);
+                if (item != null) {
+                    jsonArray.add(toNormalizedJsonElement(item));
+                }
+            }
+            return jsonArray;
+        }
+        return GSON.toJsonTree(value);
+    }
+
+    private JsonElement parseJsonStringIfApplicable(final String raw) {
+        if (raw == null) {
+            return JsonNull.INSTANCE;
+        }
+        String trimmed = raw.trim();
+        if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
+                || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+            try {
+                JsonElement parsed = GSON.fromJson(trimmed, JsonElement.class);
+                if (parsed != null && (parsed.isJsonObject() || parsed.isJsonArray())) {
+                    return toNormalizedJsonElement(parsed);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return new JsonPrimitive(raw);
+    }
+
+    @Deactivate
+    protected void deactivate() {
+        boundServlets.clear();
+        LOG.info("SecurityFilter deactivated.");
+    }
+
+    @Override
+    public void init(final FilterConfig filterConfig) throws ServletException {
+    }
+
+    @Override
+    public void doFilter(final ServletRequest servletRequest, final ServletResponse servletResponse, final FilterChain chain)
+            throws IOException, ServletException {
+
+        if (!enabled || !(servletRequest instanceof HttpServletRequest) || !(servletResponse instanceof HttpServletResponse)) {
+            chain.doFilter(servletRequest, servletResponse);
+            return;
+        }
+
+        HttpServletRequest httpRequest = (HttpServletRequest) servletRequest;
+        HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
+
+        String requestUri = httpRequest.getRequestURI();
+        if (!isApplicablePath(requestUri)) {
+            chain.doFilter(servletRequest, servletResponse);
+            return;
+        }
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("--> [FILTER START] Evaluating request: Method=[{}], URI=[{}], Query=[{}], ClientIP=[{}]",
+                    httpRequest.getMethod(), requestUri, httpRequest.getQueryString(), SecurityUtils.getClientIp(httpRequest));
+        }
+
+        ServletPolicyRule activePolicy = evaluatePoliciesAndFindActive(httpRequest, httpResponse);
+        if (activePolicy == REJECTED_POLICY) {
+            LOG.debug("<-- [FILTER BLOCKED] Request [{} {}] was rejected by security policy.",
+                    httpRequest.getMethod(), requestUri);
+            return;
+        }
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("<-- [FILTER PASS] Request [{} {}] passed all security validations (Referer, Method, Param).",
+                    httpRequest.getMethod(), requestUri);
+        }
+
+        chain.doFilter(servletRequest, servletResponse);
+    }
+
+    public static boolean isApplicablePath(final String uri) {
+        if (uri == null) {
+            return false;
+        }
+        return uri.startsWith("/aemapi/") || uri.startsWith("/sysapi/") || uri.equals("/aemapi") || uri.equals("/sysapi")
+                || uri.startsWith("/bin/") || uri.startsWith("/api/") || uri.equals("/bin") || uri.equals("/api")
+                || uri.contains("myproject/components/") || uri.contains("/components/");
+    }
+
+    private ServletPolicyRule evaluatePoliciesAndFindActive(final HttpServletRequest request,
+                                                            final HttpServletResponse response) throws IOException {
+        if (servletSecurityConfig == null || !servletSecurityConfig.isEnabled()) {
+            return null;
+        }
+
+        ServletPolicyRule matchedPolicy = servletSecurityConfig.findMatchingPolicy(request);
+        if (matchedPolicy == null) {
+            return null;
+        }
+
+        if (!matchedPolicy.isEnabled()) {
+            return matchedPolicy;
+        }
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Evaluating policy target [{}] for [{} {}]: Methods={}, AllowedReferrers={}, Params={}",
+                    matchedPolicy.getTarget(), request.getMethod(), request.getRequestURI(),
+                    matchedPolicy.getMethods(), matchedPolicy.getAllowedReferrers(), matchedPolicy.getParams().keySet());
+        }
+
+        // 매칭된 정책에 대해 3대 검증기 체인(REFERER -> METHOD -> PARAM) 실행
+        for (PolicyValidator validator : validators) {
+            if (!validator.isEnabled(matchedPolicy, servletSecurityConfig)) {
+                LOG.debug("  [-] Validator [{}] is skipped/disabled for target [{}]", validator.getName(), matchedPolicy.getTarget());
+                continue;
+            }
+
+            LOG.debug("  [*] Executing validator [{}] for target [{}]", validator.getName(), matchedPolicy.getTarget());
+            ValidationResult result = validator.validate(request, matchedPolicy, servletSecurityConfig);
+            if (!result.isValid()) {
+                String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
+                LOG.debug("  [!] Validator [{}] FAILED for URI [{}]: Status={}, Code={}, Message={} | AppliedServletPolicy=[{}]",
+                        validator.getName(), request.getRequestURI(), result.getStatusCode(), result.getSubCode(),
+                        result.getResponseMessage(), appliedPolicyInfo);
+                handleSecurityViolation(request, response, matchedPolicy, validator.getName(), result.getStatusCode(),
+                        result.getSubCode(), result.getViolationDetail(), result.getResponseMessage());
+                return REJECTED_POLICY;
+            }
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("  [+] Validator [{}] PASSED for target [{}] | PassedConfig=[{}]",
+                        validator.getName(), matchedPolicy.getTarget(),
+                        validator.describePassedConfig(request, matchedPolicy, servletSecurityConfig));
+            }
+        }
+
+        LOG.debug("All active validators PASSED for target [{}] on URI [{}]", matchedPolicy.getTarget(), request.getRequestURI());
+        return matchedPolicy;
+    }
+
+    private void handleConfigFailure(final String source, final Exception e, final boolean isEnabled) {
+        if (this.servletSecurityConfig != null &&
+                ((this.servletSecurityConfig.getPolicies() != null && !this.servletSecurityConfig.getPolicies().isEmpty())
+                        || this.servletSecurityConfig.getDefaultPolicy() != null)) {
+            LOG.error("CRITICAL: Failed to parse servlet policies from {}! Retaining previous active configuration (Last Known Good). Error: {}",
+                    source, e.getMessage(), e);
+        } else {
+            LOG.error("CRITICAL: Failed to parse servlet policies from {} during startup. Initializing safe fallback config. Error: {}",
+                    source, e.getMessage(), e);
+            ServletSecurityConfig fallback = new ServletSecurityConfig(isEnabled, Collections.emptyList());
+            fallback.init();
+            this.servletSecurityConfig = fallback;
+        }
+    }
+
+    private void logConfiguredPolicies() {
+        if (servletSecurityConfig == null) {
+            LOG.info("No Servlet Policies configured.");
+            return;
+        }
+
+        LOG.info("=== Servlet Security Policies (Enabled: {}) ===", servletSecurityConfig.isEnabled());
+
+        if (servletSecurityConfig.getDefaultPolicy() != null) {
+            ServletPolicyRule def = servletSecurityConfig.getDefaultPolicy();
+            LOG.info("Default Policy (Fallback): Enabled: [{}], Methods: {}, DefaultReferrer: [{}], AllowUndefinedParams: [{}], Params: {}",
+                    def.isEnabled(),
+                    def.getMethods().isEmpty() ? "ALL" : def.getMethods(),
+                    servletSecurityConfig.getDefaultReferrer(),
+                    def.isAllowUndefinedParams(),
+                    def.getParams().keySet());
+        }
+
+        if (servletSecurityConfig.getPolicies() != null) {
+            for (ServletPolicyRule policy : servletSecurityConfig.getPolicies()) {
+                LOG.info("Policy Target: [{}], Enabled: [{}], Methods: {}, AllowedReferrers: {}, AllowUndefinedParams: [{}], Params: {}",
+                        policy.getTarget(),
+                        policy.isEnabled(),
+                        policy.getMethods().isEmpty() ? "ALL" : policy.getMethods(),
+                        policy.getAllowedReferrers(),
+                        policy.isAllowUndefinedParams(),
+                        policy.getParams().keySet());
+            }
+        }
+    }
+
+    @Override
+    public void destroy() {
+    }
+
+    private void handleSecurityViolation(final HttpServletRequest request, final HttpServletResponse response,
+                                         final ServletPolicyRule matchedPolicy, final String validatorName,
+                                         final int statusCode, final String subCode,
+                                         final String violationDetail, final String responseMessage)
+            throws IOException {
+        String clientIp = SecurityUtils.getClientIp(request);
+        String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
+        LOG.warn("SECURITY VIOLATION BLOCKED: Client IP=[{}], Method=[{}], URI=[{}], Validator=[{}], Status=[{}], ErrorCode=[{}], Reason=[{}] | AppliedServletPolicy=[{}]",
+                clientIp,
+                request.getMethod(),
+                SecurityUtils.sanitizeForLog(request.getRequestURI()),
+                validatorName != null ? validatorName : "UNKNOWN",
+                statusCode,
+                subCode,
+                violationDetail,
+                appliedPolicyInfo);
+
+        if (!response.isCommitted()) {
+            response.setStatus(statusCode);
+            response.setContentType("application/json;charset=UTF-8");
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+
+            Map<String, Object> errorBody = new LinkedHashMap<>();
+            errorBody.put("code", statusCode);
+            if (subCode != null && !subCode.isEmpty()) {
+                errorBody.put("errorCode", subCode);
+            }
+            errorBody.put("message", responseMessage);
+
+            response.getWriter().write(GSON.toJson(errorBody));
+            response.getWriter().flush();
+        }
+    }
+
+    /**
+     * 보안 위반 로깅을 위해 매칭된 ServletPolicyRule과 원본 서블릿 클래스/출처 정보를 포맷팅합니다.
+     */
+    public String formatAppliedPolicyForLog(final ServletPolicyRule matchedPolicy) {
+        if (matchedPolicy == null) {
+            return "NONE";
+        }
+        String target = matchedPolicy.getTarget();
+        String servletSource = resolvePolicySourceLabel(target);
+        return "source=" + servletSource + ", " + matchedPolicy.toPolicySummaryString();
+    }
+
+    private String resolvePolicySourceLabel(final String target) {
+        if (StringUtils.isBlank(target)) {
+            return "UNKNOWN";
+        }
+        if ("DEFAULT".equalsIgnoreCase(target.trim())) {
+            return "DefaultPolicy(SecurityFilter.config)";
+        }
+        for (Map.Entry<Servlet, Map<String, Object>> entry : boundServlets.entrySet()) {
+            List<String> targets = extractServletTargets(entry.getValue());
+            for (String t : targets) {
+                if (target.trim().equalsIgnoreCase(t.trim())) {
+                    Servlet servlet = entry.getKey();
+                    Object compName = entry.getValue().get("component.name");
+                    if (compName != null && StringUtils.isNotBlank(compName.toString())) {
+                        return compName.toString().trim();
+                    }
+                    return servlet.getClass().getName();
+                }
+            }
+        }
+        return "ConfiguredPolicy";
+    }
+
+    private void applyOsgiValidatorToggles(final Config config, final Map<String, Object> properties) {
+        if (servletSecurityConfig == null) {
+            return;
+        }
+        if (config != null) {
+            if (!config.validator_referer_enabled()) servletSecurityConfig.setValidatorEnabled("REFERER", false);
+            if (!config.validator_method_enabled()) servletSecurityConfig.setValidatorEnabled("METHOD", false);
+            if (!config.validator_param_enabled()) servletSecurityConfig.setValidatorEnabled("PARAM", false);
+        }
+        if (properties != null) {
+            applyPropertyValidatorToggle(properties, "validator.referer.enabled", "REFERER");
+            applyPropertyValidatorToggle(properties, "validator.method.enabled", "METHOD");
+            applyPropertyValidatorToggle(properties, "validator.param.enabled", "PARAM");
+        }
+    }
+
+    private void applyPropertyValidatorToggle(final Map<String, Object> properties, final String key, final String validatorName) {
+        if (properties.containsKey(key)) {
+            Object val = properties.get(key);
+            if (val instanceof Boolean) {
+                servletSecurityConfig.setValidatorEnabled(validatorName, (Boolean) val);
+            } else if (val instanceof String) {
+                servletSecurityConfig.setValidatorEnabled(validatorName, Boolean.parseBoolean((String) val));
+            }
+        }
+    }
+
+    public ServletSecurityConfig getServletSecurityConfig() {
+        return servletSecurityConfig;
+    }
+}

@@ -1,0 +1,15 @@
+# Maven build output
+target/
+*.class
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+filter.zip
