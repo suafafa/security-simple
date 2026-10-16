@@ -278,5 +278,33 @@ class SecurityFilterTest {
                 new com.example.security.validators.ParamPolicyValidator();
         org.junit.jupiter.api.Assertions.assertTrue(
                 paramVal.describePassedConfig(request, matched, filter.getServletSecurityConfig()).contains("allowUndefinedParams=false"));
+
+        // Verify BlockedByConfig details on failure
+        when(request.getMethod()).thenReturn("DELETE");
+        com.example.security.validators.ValidationResult methodFail =
+                methodVal.validate(request, matched, filter.getServletSecurityConfig());
+        org.junit.jupiter.api.Assertions.assertFalse(methodFail.isValid());
+        org.junit.jupiter.api.Assertions.assertTrue(methodFail.getBlockedConfig().contains("allowedMethods=[POST]"));
+        org.junit.jupiter.api.Assertions.assertTrue(methodFail.getBlockedConfig().contains("requestMethod=DELETE"));
+
+        when(request.getHeader("Referer")).thenReturn("https://evil.org/attack");
+        com.example.security.validators.ValidationResult refererFail =
+                refererVal.validate(request, matched, filter.getServletSecurityConfig());
+        org.junit.jupiter.api.Assertions.assertFalse(refererFail.isValid());
+        org.junit.jupiter.api.Assertions.assertTrue(refererFail.getBlockedConfig().contains("allowedReferrers=[partner.abc.com]"));
+
+        Map<String, String[]> paramMap = new HashMap<>();
+        paramMap.put("name", new String[]{"A"}); // missing required 'email' first
+        when(request.getParameterMap()).thenReturn(paramMap);
+        com.example.security.validators.ValidationResult requiredFail =
+                paramVal.validate(request, matched, filter.getServletSecurityConfig());
+        org.junit.jupiter.api.Assertions.assertFalse(requiredFail.isValid());
+        org.junit.jupiter.api.Assertions.assertTrue(requiredFail.getBlockedConfig().contains("param=email, required=true"));
+
+        paramMap.put("email", new String[]{"user@abc.com"}); // now test minLength=2 violation on 'name'
+        com.example.security.validators.ValidationResult paramFail =
+                paramVal.validate(request, matched, filter.getServletSecurityConfig());
+        org.junit.jupiter.api.Assertions.assertFalse(paramFail.isValid());
+        org.junit.jupiter.api.Assertions.assertTrue(paramFail.getBlockedConfig().contains("param=name, minLength=2"));
     }
 }

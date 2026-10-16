@@ -39,24 +39,52 @@ public enum SecurityErrorCode {
     private final String subCode;
     private final String messageTemplate;
 
+    /**
+     * 보안 에러 코드 열거형 상수를 초기화합니다.
+     *
+     * @param httpStatus      클라이언트에 반환할 HTTP 상태 코드
+     * @param subCode         표준 보안 서브 에러 코드 (예: "SEC-40002")
+     * @param messageTemplate 응답 에러 메시지 포맷 템플릿
+     */
     SecurityErrorCode(int httpStatus, String subCode, String messageTemplate) {
         this.httpStatus = httpStatus;
         this.subCode = subCode;
         this.messageTemplate = messageTemplate;
     }
 
+    /**
+     * 이 에러 코드에 매핑된 HTTP 상태 코드를 반환합니다.
+     *
+     * @return HTTP 상태 코드 (400, 403, 405 등)
+     */
     public int getHttpStatus() {
         return httpStatus;
     }
 
+    /**
+     * 표준 보안 서브 에러 코드 문자열(예: "SEC-40303")을 반환합니다.
+     *
+     * @return 표준 보안 서브 에러 코드
+     */
     public String getSubCode() {
         return subCode;
     }
 
+    /**
+     * 포맷팅 전 원본 에러 메시지 템플릿을 반환합니다.
+     *
+     * @return 메시지 템플릿 문자열
+     */
     public String getMessageTemplate() {
         return messageTemplate;
     }
 
+    /**
+     * 메시지 템플릿에 인자를 대입하여 완성된 에러 메시지 문자열을 생성합니다.
+     *
+     * @param args 메시지 템플릿 포맷팅 인자 목록
+     * @return 포맷팅된 에러 메시지 문자열
+     */
     public String format(Object... args) {
         if (args != null && args.length > 0) {
             try {

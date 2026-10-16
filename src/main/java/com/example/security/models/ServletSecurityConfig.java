@@ -62,9 +62,18 @@ public class ServletSecurityConfig {
     private transient List<ServletPolicyRule> dynamicPatternPolicies = new CopyOnWriteArrayList<>();
     private transient Map<String, ServletPolicyRule> dynamicPoliciesByTarget = new ConcurrentHashMap<>();
 
+    /**
+     * 기본 생성자입니다.
+     */
     public ServletSecurityConfig() {
     }
 
+    /**
+     * 필터 활성화 여부와 정적 정책 리스트로 루트 보안 설정 객체를 생성하고 인덱스를 초기화합니다.
+     *
+     * @param enabled  전역 필터 활성화 여부
+     * @param policies 정적 서블릿 보안 정책 리스트
+     */
     public ServletSecurityConfig(Boolean enabled, List<ServletPolicyRule> policies) {
         this.enabled = enabled;
         this.policies = policies;
@@ -72,6 +81,10 @@ public class ServletSecurityConfig {
         init();
     }
 
+    /**
+     * 루트 설정, 기본 정책(defaultPolicy), 개별 서블릿 정책(policies)의 유효성을 검증하고
+     * 런타임 O(1) 고속 조회를 위한 다계층 해시 인덱스를 초기화합니다.
+     */
     public final void init() {
         Map<String, Boolean> map = validatorStatusMap != null ? new HashMap<>(validatorStatusMap) : new HashMap<>();
         if (validators != null && validators.isJsonObject()) {
@@ -157,7 +170,7 @@ public class ServletSecurityConfig {
         this.patternOrPrefixPolicies = Collections.unmodifiableList(patternList);
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("ServletSecurityConfig initialized: enabled={}, defaultReferrer={}, indexed: [exactUri={}, resourceType={}, patterns={}]",
+            LOG.debug("ServletSecurityConfig 초기화 완료 - enabled={}, defaultReferrer={}, 인덱싱 현황: [exactUri={}, resourceType={}, patterns={}]",
                     enabled, defaultReferrer, exactMap.size(), resMap.size(), patternList.size());
         }
 
@@ -182,6 +195,18 @@ public class ServletSecurityConfig {
         }
     }
 
+    /**
+     * 다계층 O(1) Fast-Path 인덱스를 사용하여 유입된 요청에 매칭되는 서블릿 보안 정책을 탐색합니다:
+     * 1. 동적/정적 전체 URI 직접 일치 조회 (O(1))
+     * 2. 확장자 및 셀렉터를 제거한 기본 URI 조회 (O(1))
+     * 3. Sling ResourceType 직접 일치 및 상위 타입 조회 (O(1))
+     * 4. 정규식 패턴 및 와일드카드 규칙 조회
+     * 5. URI 내 상대 컴포넌트 경로 또는 접두사 포함 여부 조회
+     * 6. 매칭 실패 시 전사 기본 정책(defaultPolicy)으로 폴백(Fallback)
+     *
+     * @param request 유입된 HTTP 요청
+     * @return 매칭된 ServletPolicyRule (매칭 정책 및 기본 정책이 모두 없으면 null)
+     */
     public ServletPolicyRule findMatchingPolicy(final HttpServletRequest request) {
         if (request == null) {
             return defaultPolicy;
@@ -195,12 +220,18 @@ public class ServletSecurityConfig {
             if (dynamicExactUriMap != null) {
                 ServletPolicyRule match = dynamicExactUriMap.get(lowerUri);
                 if (match != null) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("[정책 매칭: Tier 1 - 동적 URI 일치] requestUri=[{}] -> target=[{}]", requestUri, match.getTarget());
+                    }
                     return match;
                 }
             }
             if (exactUriMap != null && !exactUriMap.isEmpty()) {
                 ServletPolicyRule match = exactUriMap.get(lowerUri);
                 if (match != null) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("[정책 매칭: Tier 1 - 정적 URI 일치] requestUri=[{}] -> target=[{}]", requestUri, match.getTarget());
+                    }
                     return match;
                 }
             }
@@ -213,12 +244,20 @@ public class ServletSecurityConfig {
                 if (dynamicExactUriMap != null) {
                     ServletPolicyRule match = dynamicExactUriMap.get(baseUri);
                     if (match != null) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("[정책 매칭: Tier 2 - 동적 Base URI 일치] requestUri=[{}], baseUri=[{}] -> target=[{}]",
+                                    requestUri, baseUri, match.getTarget());
+                        }
                         return match;
                     }
                 }
                 if (exactUriMap != null && !exactUriMap.isEmpty()) {
                     ServletPolicyRule match = exactUriMap.get(baseUri);
                     if (match != null) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("[정책 매칭: Tier 2 - 정적 Base URI 일치] requestUri=[{}], baseUri=[{}] -> target=[{}]",
+                                    requestUri, baseUri, match.getTarget());
+                        }
                         return match;
                     }
                 }
@@ -234,16 +273,28 @@ public class ServletSecurityConfig {
                     if (dynamicResourceTypeMap != null) {
                         ServletPolicyRule match = dynamicResourceTypeMap.get(resourceType);
                         if (match != null) {
+                            if (LOG.isDebugEnabled()) {
+                                LOG.debug("[정책 매칭: Tier 3 - 동적 ResourceType 일치] resourceType=[{}] -> target=[{}]",
+                                        resourceType, match.getTarget());
+                            }
                             return match;
                         }
                     }
                     if (resourceTypeMap != null && !resourceTypeMap.isEmpty()) {
                         ServletPolicyRule match = resourceTypeMap.get(resourceType);
                         if (match != null) {
+                            if (LOG.isDebugEnabled()) {
+                                LOG.debug("[정책 매칭: Tier 3 - 정적 ResourceType 일치] resourceType=[{}] -> target=[{}]",
+                                        resourceType, match.getTarget());
+                            }
                             return match;
                         }
                         for (Map.Entry<String, ServletPolicyRule> entry : resourceTypeMap.entrySet()) {
                             if (resource.isResourceType(entry.getKey())) {
+                                if (LOG.isDebugEnabled()) {
+                                    LOG.debug("[정책 매칭: Tier 3 - 정적 상위 ResourceType 일치] resourceType=[{}] -> target=[{}]",
+                                            resourceType, entry.getValue().getTarget());
+                                }
                                 return entry.getValue();
                             }
                         }
@@ -251,6 +302,10 @@ public class ServletSecurityConfig {
                     if (dynamicResourceTypeMap != null && !dynamicResourceTypeMap.isEmpty()) {
                         for (Map.Entry<String, ServletPolicyRule> entry : dynamicResourceTypeMap.entrySet()) {
                             if (resource.isResourceType(entry.getKey())) {
+                                if (LOG.isDebugEnabled()) {
+                                    LOG.debug("[정책 매칭: Tier 3 - 동적 상위 ResourceType 일치] resourceType=[{}] -> target=[{}]",
+                                            resourceType, entry.getValue().getTarget());
+                                }
                                 return entry.getValue();
                             }
                         }
@@ -263,6 +318,10 @@ public class ServletSecurityConfig {
         if (dynamicPatternPolicies != null && !dynamicPatternPolicies.isEmpty()) {
             for (ServletPolicyRule rule : dynamicPatternPolicies) {
                 if (rule.matches(request)) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("[정책 매칭: Tier 4 - 동적 정규식 패턴 일치] requestUri=[{}] -> target=[{}]",
+                                requestUri, rule.getTarget());
+                    }
                     return rule;
                 }
             }
@@ -270,6 +329,10 @@ public class ServletSecurityConfig {
         if (patternOrPrefixPolicies != null && !patternOrPrefixPolicies.isEmpty()) {
             for (ServletPolicyRule rule : patternOrPrefixPolicies) {
                 if (rule.matches(request)) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("[정책 매칭: Tier 4 - 정적 정규식 패턴 일치] requestUri=[{}] -> target=[{}]",
+                                requestUri, rule.getTarget());
+                    }
                     return rule;
                 }
             }
@@ -280,6 +343,10 @@ public class ServletSecurityConfig {
             if (dynamicExactUriMap != null && !dynamicExactUriMap.isEmpty()) {
                 for (ServletPolicyRule rule : dynamicExactUriMap.values()) {
                     if (rule.matches(request)) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("[정책 매칭: Tier 5 - 동적 접두사 일치] requestUri=[{}] -> target=[{}]",
+                                    requestUri, rule.getTarget());
+                        }
                         return rule;
                     }
                 }
@@ -287,6 +354,10 @@ public class ServletSecurityConfig {
             if (exactUriMap != null && !exactUriMap.isEmpty()) {
                 for (ServletPolicyRule rule : exactUriMap.values()) {
                     if (rule.matches(request)) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("[정책 매칭: Tier 5 - 정적 접두사 일치] requestUri=[{}] -> target=[{}]",
+                                    requestUri, rule.getTarget());
+                        }
                         return rule;
                     }
                 }
@@ -294,6 +365,10 @@ public class ServletSecurityConfig {
             if (dynamicResourceTypeMap != null && !dynamicResourceTypeMap.isEmpty()) {
                 for (ServletPolicyRule rule : dynamicResourceTypeMap.values()) {
                     if (rule.matches(request)) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("[정책 매칭: Tier 5 - 동적 컴포넌트 경로 포함] requestUri=[{}] -> target=[{}]",
+                                    requestUri, rule.getTarget());
+                        }
                         return rule;
                     }
                 }
@@ -301,6 +376,10 @@ public class ServletSecurityConfig {
             if (resourceTypeMap != null && !resourceTypeMap.isEmpty()) {
                 for (ServletPolicyRule rule : resourceTypeMap.values()) {
                     if (rule.matches(request)) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("[정책 매칭: Tier 5 - 정적 컴포넌트 경로 포함] requestUri=[{}] -> target=[{}]",
+                                    requestUri, rule.getTarget());
+                        }
                         return rule;
                     }
                 }
@@ -308,9 +387,18 @@ public class ServletSecurityConfig {
         }
 
         // 계층 6: 매칭된 정책이 없을 경우 기본 정책(defaultPolicy)으로 폴백
+        if (defaultPolicy != null && LOG.isDebugEnabled()) {
+            LOG.debug("[정책 매칭: Tier 6 - DefaultPolicy 폴백 적용] requestUri=[{}] -> target=[DEFAULT]", requestUri);
+        }
         return defaultPolicy;
     }
 
+    /**
+     * 동적으로 바인딩된 서블릿의 보안 정책을 런타임 인덱스에 등록합니다.
+     * (서블릿 바인딩 시 로그가 과다 생성되지 않도록 로그 출력을 수행하지 않습니다.)
+     *
+     * @param rule 등록할 서블릿 보안 정책 규칙
+     */
     public void registerDynamicPolicy(final ServletPolicyRule rule) {
         if (rule == null || StringUtils.isBlank(rule.getTarget())) {
             return;
@@ -333,6 +421,12 @@ public class ServletSecurityConfig {
         }
     }
 
+    /**
+     * 언바인딩된 서블릿의 동적 보안 정책을 런타임 인덱스에서 제거합니다.
+     * (서블릿 언바인딩 시 로그가 과다 생성되지 않도록 로그 출력을 수행하지 않습니다.)
+     *
+     * @param target 제거할 서블릿 타겟(경로 또는 resourceType)
+     */
     public void unregisterDynamicPolicy(final String target) {
         if (StringUtils.isBlank(target)) {
             return;
@@ -344,10 +438,21 @@ public class ServletSecurityConfig {
         dynamicPatternPolicies.removeIf(r -> trimmed.equalsIgnoreCase(r.getTarget()));
     }
 
+    /**
+     * 현재 동적으로 등록된 모든 서블릿 정책 맵(읽기 전용)을 반환합니다.
+     *
+     * @return 타겟별 동적 서블릿 정책 맵
+     */
     public Map<String, ServletPolicyRule> getDynamicPolicies() {
         return Collections.unmodifiableMap(dynamicPoliciesByTarget);
     }
 
+    /**
+     * 특정 타겟 경로 또는 resourceType에 해당하는 동적 서블릿 정책을 조회합니다.
+     *
+     * @param target 조회할 타겟 문자열
+     * @return 매칭된 동적 ServletPolicyRule (없을 경우 null)
+     */
     public ServletPolicyRule getDynamicPolicy(final String target) {
         if (StringUtils.isBlank(target) || dynamicPoliciesByTarget == null) {
             return null;
@@ -360,38 +465,84 @@ public class ServletSecurityConfig {
         return rule;
     }
 
+    /**
+     * 전역 보안 필터 설정의 활성화 여부를 반환합니다.
+     *
+     * @return 활성화 시 true (기본값 true)
+     */
     public boolean isEnabled() {
         return enabled == null || enabled;
     }
 
+    /**
+     * 전역 보안 필터 설정의 활성화 여부를 설정합니다.
+     *
+     * @param enabled 활성화 여부
+     */
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
 
+    /**
+     * 전역 기본 신뢰 Referer 도메인(예: "abc.com")을 반환합니다.
+     *
+     * @return 기본 신뢰 Referer 도메인
+     */
     public String getDefaultReferrer() {
         return StringUtils.isNotBlank(defaultReferrer) ? defaultReferrer.trim() : "abc.com";
     }
 
+    /**
+     * 전역 기본 신뢰 Referer 도메인을 설정합니다.
+     *
+     * @param defaultReferrer 기본 신뢰 Referer 도메인
+     */
     public void setDefaultReferrer(String defaultReferrer) {
         this.defaultReferrer = defaultReferrer;
     }
 
+    /**
+     * 전사 공통 기본 보안 정책(defaultPolicy)을 반환합니다.
+     *
+     * @return 기본 보안 정책 규칙
+     */
     public ServletPolicyRule getDefaultPolicy() {
         return defaultPolicy;
     }
 
+    /**
+     * 전사 공통 기본 보안 정책(defaultPolicy)을 설정합니다.
+     *
+     * @param defaultPolicy 기본 보안 정책 규칙
+     */
     public void setDefaultPolicy(ServletPolicyRule defaultPolicy) {
         this.defaultPolicy = defaultPolicy;
     }
 
+    /**
+     * 정적으로 설정된 서블릿 보안 정책 리스트를 반환합니다.
+     *
+     * @return 서블릿 보안 정책 리스트
+     */
     public List<ServletPolicyRule> getPolicies() {
         return policies != null ? policies : Collections.emptyList();
     }
 
+    /**
+     * 정적 서블릿 보안 정책 리스트를 설정합니다.
+     *
+     * @param policies 서블릿 보안 정책 리스트
+     */
     public void setPolicies(List<ServletPolicyRule> policies) {
         this.policies = policies;
     }
 
+    /**
+     * 특정 검증기(REFERER, METHOD, PARAM)가 전역적으로 활성화되어 있는지 확인합니다.
+     *
+     * @param validatorName 검증기 식별자 이름
+     * @return 활성화 상태이면 true (기본값 true)
+     */
     public boolean isValidatorEnabled(String validatorName) {
         if (validatorStatusMap != null && validatorName != null) {
             Boolean status = validatorStatusMap.get(validatorName.trim().toUpperCase());
@@ -402,6 +553,12 @@ public class ServletSecurityConfig {
         return true;
     }
 
+    /**
+     * 특정 검증기(REFERER, METHOD, PARAM)의 전역 활성화 상태를 설정합니다.
+     *
+     * @param validatorName 검증기 식별자 이름
+     * @param enabled       활성화 여부
+     */
     public void setValidatorEnabled(String validatorName, boolean enabled) {
         if (StringUtils.isBlank(validatorName)) {
             return;
@@ -411,6 +568,11 @@ public class ServletSecurityConfig {
         this.validatorStatusMap = Collections.unmodifiableMap(map);
     }
 
+    /**
+     * 전역 검증기 활성화 상태 맵을 반환합니다.
+     *
+     * @return 검증기 이름별 활성화 여부 맵
+     */
     public Map<String, Boolean> getValidatorStatusMap() {
         return validatorStatusMap != null ? validatorStatusMap : Collections.emptyMap();
     }

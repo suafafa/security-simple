@@ -15,7 +15,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import com.google.gson.reflect.TypeToken;
 import org.apache.commons.lang3.StringUtils;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -41,7 +40,6 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -78,6 +76,9 @@ public class SecurityFilter implements Filter {
 
     public static final String DEFAULT_FILTER_PATTERN = "(/aemapi/.*|/sysapi/.*)";
 
+    /**
+     * OSGi Configuration Admin(.config)을 통해 주입되는 경량 보안 필터 설정 인터페이스입니다.
+     */
     @ObjectClassDefinition(
             name = "AEM Lightweight Security Filter Configuration",
             description = "OSGi .config Configuration for Lightweight Servlet Security Filter (Referer, Method, Param)"
@@ -156,6 +157,14 @@ public class SecurityFilter implements Filter {
             paramPolicyValidator
     ));
 
+    /**
+     * OSGi 컨테이너에서 {@link Servlet} 서비스가 등록될 때 호출되는 동적 바인딩 콜백 메소드입니다.
+     * 서블릿의 경로 또는 resourceType이 {@code sling.filter.pattern}과 일치하는 경우에만 동적 보안 정책을 등록합니다.
+     * 주의: 서블릿이 다수 등록될 때 로그가 과도하게 발생하는 것을 방지하기 위해 이 메소드에서는 디버그 로그를 출력하지 않습니다.
+     *
+     * @param servlet    바인딩된 서블릿 인스턴스
+     * @param properties 서블릿의 OSGi 컴포넌트 프로퍼티 맵
+     */
     @Reference(
             service = Servlet.class,
             cardinality = ReferenceCardinality.MULTIPLE,
@@ -168,7 +177,7 @@ public class SecurityFilter implements Filter {
             return;
         }
 
-        // sling.filter.pattern과 경로 또는 resourceType이 일치하는 서블릿만 바인딩
+        // sling.filter.pattern과 경로 또는 resourceType이 일치하는 서블릿만 바인딩 (로그 출력 없음)
         if (!isApplicableServlet(properties)) {
             return;
         }
@@ -185,6 +194,14 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * OSGi 컨테이너에서 {@link Servlet} 서비스가 해제될 때 호출되는 동적 언바인딩 콜백 메소드입니다.
+     * 바인딩 시 등록되었던 서블릿의 동적 보안 정책을 제거합니다.
+     * 주의: 서블릿 언바인딩 시에도 로그 폭증을 방지하기 위해 디버그 로그를 출력하지 않습니다.
+     *
+     * @param servlet    언바인딩된 서블릿 인스턴스
+     * @param properties 서블릿의 OSGi 컴포넌트 프로퍼티 맵
+     */
     public void unbindServlet(final Servlet servlet, final Map<String, Object> properties) {
         if (servlet == null) {
             return;
@@ -209,7 +226,11 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * 서블릿의 경로 또는 resourceType이 sling.filter.pattern과 일치하는지 판별합니다.
+     * 서블릿의 경로({@code sling.servlet.paths}) 또는 리소스 타입({@code sling.servlet.resourceTypes})이
+     * 현재 필터의 {@code sling.filter.pattern}과 일치하는지 판별합니다.
+     *
+     * @param properties 서블릿의 OSGi 프로퍼티 맵
+     * @return 필터 적용 대상 서블릿이면 true, 아니면 false
      */
     public boolean isApplicableServlet(final Map<String, Object> properties) {
         if (properties == null || properties.isEmpty()) {
@@ -228,7 +249,10 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * 대상 경로 또는 resourceType이 컴파일된 sling.filter.pattern 정규식과 일치하는지 검사합니다.
+     * 대상 경로 또는 resourceType이 컴파일된 {@code sling.filter.pattern} 정규식과 일치하는지 검사합니다.
+     *
+     * @param target 검사할 타겟 경로 또는 resourceType 문자열
+     * @return 패턴과 일치하면 true, 아니면 false
      */
     public boolean matchesFilterPattern(final String target) {
         if (StringUtils.isBlank(target)) {
@@ -252,7 +276,11 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * OSGi 속성에서 서블릿 타겟 목록을 추출합니다.
+     * OSGi 속성 맵에서 서블릿의 타겟 경로({@code sling.servlet.paths}) 및
+     * 리소스 타입({@code sling.servlet.resourceTypes}) 목록을 추출합니다.
+     *
+     * @param properties 서블릿의 OSGi 프로퍼티 맵
+     * @return 추출된 타겟 문자열 리스트
      */
     public List<String> extractServletTargets(final Map<String, Object> properties) {
         if (properties == null || properties.isEmpty()) {
@@ -267,6 +295,13 @@ public class SecurityFilter implements Filter {
         return targets;
     }
 
+    /**
+     * 프로퍼티 맵에서 지정된 키의 값을 문자열 리스트로 변환하여 반환합니다.
+     *
+     * @param map 프로퍼티 맵
+     * @param key 조회할 키
+     * @return 추출된 문자열 리스트
+     */
     private static List<String> extractStringListFromMap(final Map<String, Object> map, final String key) {
         if (map == null || !map.containsKey(key)) {
             return Collections.emptyList();
@@ -307,6 +342,12 @@ public class SecurityFilter implements Filter {
         return Collections.emptyList();
     }
 
+    /**
+     * 필터의 {@code sling.filter.pattern} 정규식을 새로운 패턴으로 업데이트하고,
+     * 이미 바인딩된 서블릿 목록을 새 패턴 기준으로 재평가하여 일치하지 않는 동적 정책을 해제합니다.
+     *
+     * @param newPattern 새로 적용할 정규식 패턴 문자열
+     */
     public synchronized void updateFilterPattern(final String newPattern) {
         if (StringUtils.isBlank(newPattern)) {
             return;
@@ -339,18 +380,41 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * 현재 설정된 {@code sling.filter.pattern} 문자열을 반환합니다.
+     *
+     * @return 필터 패턴 문자열
+     */
     public String getFilterPattern() {
         return filterPattern;
     }
 
+    /**
+     * 현재 컴파일된 {@code sling.filter.pattern} {@link Pattern} 객체를 반환합니다.
+     *
+     * @return 컴파일된 정규식 Pattern 객체
+     */
     public Pattern getCompiledFilterPattern() {
         return compiledFilterPattern;
     }
 
+    /**
+     * 현재 동적으로 바인딩되어 관리 중인 서블릿 맵(읽기 전용)을 반환합니다.
+     *
+     * @return 바인딩된 서블릿과 프로퍼티 맵
+     */
     public Map<Servlet, Map<String, Object>> getBoundServlets() {
         return Collections.unmodifiableMap(boundServlets);
     }
 
+    /**
+     * OSGi 컴포넌트 활성화({@code @Activate}) 및 설정 변경({@code @Modified}) 시 호출됩니다.
+     * OSGi {@code .config} 설정 또는 프로퍼티 맵으로부터 기본 보안 정책과 검증기 활성화 상태를 로드하고,
+     * 바인딩된 서블릿들의 동적 정책을 동기화합니다.
+     *
+     * @param config     OSGi OCD 설정 객체
+     * @param properties OSGi 컴포넌트 프로퍼티 맵
+     */
     @Activate
     @Modified
     public void activate(final Config config, final Map<String, Object> properties) {
@@ -382,14 +446,16 @@ public class SecurityFilter implements Filter {
         }
 
         if (config != null || hasOsgiDotConfigProperties(properties)) {
+            LOG.debug("Loading SecurityFilter policies from OSGi .config attributes (isEnabled={}).", isEnabled);
             loadFromOsgiConfig(isEnabled, config, properties);
         } else if (properties != null) {
+            LOG.debug("Loading SecurityFilter policies from OSGi map/JSON properties (isEnabled={}).", isEnabled);
             parsePoliciesFromProperties(isEnabled, properties);
         }
 
         applyOsgiValidatorToggles(config, properties);
 
-        // 새로 로드된 defaultPolicy와 동적으로 바인딩된 모든 서블릿을 동기화
+        // 새로 로드된 defaultPolicy와 동적으로 바인딩된 모든 서블릿을 동기화 (바인딩 루프에서는 로그 생략)
         if (servletSecurityConfig != null && !boundServlets.isEmpty()) {
             for (Map<String, Object> props : boundServlets.values()) {
                 if (isApplicableServlet(props)) {
@@ -410,6 +476,12 @@ public class SecurityFilter implements Filter {
                 enabled, filterPattern, servletSecurityConfig != null ? servletSecurityConfig.getPolicies().size() : 0);
     }
 
+    /**
+     * 프로퍼티 맵에 OSGi {@code .config} 형식의 {@code default.*} 속성이 포함되어 있는지 확인합니다.
+     *
+     * @param properties OSGi 프로퍼티 맵
+     * @return {@code default.*} 키가 하나라도 존재하면 true
+     */
     private boolean hasOsgiDotConfigProperties(final Map<String, Object> properties) {
         if (properties == null || properties.isEmpty()) {
             return false;
@@ -423,8 +495,12 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * 순수 OSGi .config 속성(default.* 및 validator.*.enabled)으로부터
-     * 직접 ServletSecurityConfig 및 defaultPolicy를 생성합니다.
+     * 순수 OSGi {@code .config} 속성({@code default.*} 및 {@code validator.*.enabled})으로부터
+     * 직접 {@link ServletSecurityConfig} 및 {@code defaultPolicy}를 생성합니다.
+     *
+     * @param isEnabled  필터 전체 활성화 여부
+     * @param config     OSGi OCD 설정 객체
+     * @param properties OSGi 프로퍼티 맵
      */
     private void loadFromOsgiConfig(final boolean isEnabled, final Config config, final Map<String, Object> properties) {
         try {
@@ -443,6 +519,8 @@ public class SecurityFilter implements Filter {
             }
             newConfig.init();
             this.servletSecurityConfig = newConfig;
+            LOG.debug("Initialized ServletSecurityConfig from OSGi .config: defaultPolicy=[{}], explicitPoliciesCount={}",
+                    defaultRule.toPolicySummaryString(), policies.size());
             LOG.info("Successfully loaded configuration from OSGi .config (defaultPolicy enabled={}, methods={}, defaultReferrer={}, params={})",
                     defaultRule.isEnabled(), defaultRule.getMethods(), defaultRule.getDefaultReferrer(), defaultRule.getParams().keySet());
         } catch (Exception e) {
@@ -450,6 +528,13 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * OSGi {@link Config} 및 프로퍼티 맵에서 {@code default.*} 설정을 읽어 기본 보안 정책({@code defaultPolicy})을 생성합니다.
+     *
+     * @param config OSGi OCD 설정 객체
+     * @param props  OSGi 프로퍼티 맵
+     * @return 초기화된 기본 {@link ServletPolicyRule} 객체
+     */
     private ServletPolicyRule buildDefaultPolicyFromOsgiConfig(final Config config, final Map<String, Object> props) {
         ServletPolicyRule rule = new ServletPolicyRule();
         rule.setTarget("DEFAULT");
@@ -514,6 +599,13 @@ public class SecurityFilter implements Filter {
         return rule;
     }
 
+    /**
+     * OSGi 프로퍼티 값(Boolean 또는 {@code B"true"} 형식 문자열 포함)을 boolean 타입으로 변환합니다.
+     *
+     * @param val        변환할 프로퍼티 값
+     * @param defaultVal 변환 실패 시 반환할 기본값
+     * @return 변환된 boolean 값
+     */
     private boolean toBoolean(final Object val, final boolean defaultVal) {
         if (val instanceof Boolean) {
             return (Boolean) val;
@@ -528,6 +620,14 @@ public class SecurityFilter implements Filter {
         return defaultVal;
     }
 
+    /**
+     * 프로퍼티 맵에서 문자열 값을 추출하고 양끝 따옴표가 있으면 제거하여 반환합니다.
+     *
+     * @param props      프로퍼티 맵
+     * @param key        조회할 프로퍼티 키
+     * @param defaultVal 키가 없을 때 반환할 기본값
+     * @return 추출된 문자열
+     */
     private String getStringProp(final Map<String, Object> props, final String key, final String defaultVal) {
         if (props != null && props.containsKey(key) && props.get(key) != null) {
             String s = props.get(key).toString().trim();
@@ -539,6 +639,14 @@ public class SecurityFilter implements Filter {
         return defaultVal;
     }
 
+    /**
+     * 프로퍼티 맵에서 문자열 배열/컬렉션/쉼표 구분 문자열을 추출하여 리스트로 반환합니다.
+     *
+     * @param props      프로퍼티 맵
+     * @param key        조회할 프로퍼티 키
+     * @param defaultVal 키가 없을 때 사용할 기본 문자열 배열
+     * @return 추출된 문자열 리스트
+     */
     private List<String> getStringListProp(final Map<String, Object> props, final String key, final String[] defaultVal) {
         List<String> list = new ArrayList<>();
         if (props != null && props.containsKey(key) && props.get(key) != null) {
@@ -579,6 +687,12 @@ public class SecurityFilter implements Filter {
         return list;
     }
 
+    /**
+     * JSON/Map 형태의 OSGi 프로퍼티 맵으로부터 {@link ServletSecurityConfig} 정책 목록을 파싱하여 초기화합니다.
+     *
+     * @param isEnabled  필터 전체 활성화 여부
+     * @param properties OSGi 컴포넌트 프로퍼티 맵
+     */
     private void parsePoliciesFromProperties(final boolean isEnabled, final Map<String, Object> properties) {
         try {
             ServletSecurityConfig parsedConfig = null;
@@ -648,6 +762,11 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * Gson 역직렬화 전에 루트 JSON 객체의 필드 타입(단일 객체 vs 배열 등)을 정규화합니다.
+     *
+     * @param rootObj 정규화할 루트 {@link JsonObject}
+     */
     private void sanitizeRootConfigJsonObject(final JsonObject rootObj) {
         String[] objectKeys = {"defaultPolicy", "default", "globalPolicy"};
         for (String key : objectKeys) {
@@ -692,6 +811,12 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * 단일 정책 객체를 파싱하여 {@link ServletPolicyRule}로 변환합니다.
+     *
+     * @param obj 파싱할 원본 객체(JSON 문자열, Map, JsonElement 등)
+     * @return 변환된 {@link ServletPolicyRule} (변환 불가 시 null)
+     */
     private ServletPolicyRule parseSinglePolicyRule(final Object obj) {
         if (obj == null) {
             return null;
@@ -709,6 +834,12 @@ public class SecurityFilter implements Filter {
         return null;
     }
 
+    /**
+     * 정책 목록 객체(JSON 배열, 문자열 배열, Map 등)를 파싱하여 {@link ServletPolicyRule} 리스트로 변환합니다.
+     *
+     * @param policiesObj 파싱할 정책 목록 객체
+     * @return 변환된 {@link ServletPolicyRule} 리스트
+     */
     private List<ServletPolicyRule> parsePolicyRuleList(final Object policiesObj) {
         if (policiesObj == null) {
             return Collections.emptyList();
@@ -739,6 +870,12 @@ public class SecurityFilter implements Filter {
         return result;
     }
 
+    /**
+     * 임의의 Java 객체(Map, 배열, 컬렉션, JSON 문자열 등)를 재귀적으로 정규화된 {@link JsonElement}로 변환합니다.
+     *
+     * @param value 변환할 원본 값
+     * @return 정규화된 {@link JsonElement}
+     */
     private JsonElement toNormalizedJsonElement(final Object value) {
         if (value == null) {
             return JsonNull.INSTANCE;
@@ -861,6 +998,13 @@ public class SecurityFilter implements Filter {
         return GSON.toJsonTree(value);
     }
 
+    /**
+     * 문자열이 JSON 객체({@code {...}}) 또는 JSON 배열({@code [...]}) 형태인 경우 파싱하고,
+     * 일반 문자열이면 {@link JsonPrimitive}로 감싸서 반환합니다.
+     *
+     * @param raw 검사할 문자열
+     * @return 파싱된 {@link JsonElement}
+     */
     private JsonElement parseJsonStringIfApplicable(final String raw) {
         if (raw == null) {
             return JsonNull.INSTANCE;
@@ -879,21 +1023,45 @@ public class SecurityFilter implements Filter {
         return new JsonPrimitive(raw);
     }
 
+    /**
+     * OSGi 컴포넌트 비활성화({@code @Deactivate}) 시 호출되며, 바인딩된 서블릿 캐시를 정리합니다.
+     */
     @Deactivate
     protected void deactivate() {
         boundServlets.clear();
         LOG.info("SecurityFilter deactivated.");
     }
 
+    /**
+     * 서블릿 필터 초기화 메소드입니다 (OSGi 생명주기는 {@link #activate}에서 처리됨).
+     *
+     * @param filterConfig 서블릿 필터 설정 객체
+     * @throws ServletException 필터 초기화 예외
+     */
     @Override
     public void init(final FilterConfig filterConfig) throws ServletException {
     }
 
+    /**
+     * 매 HTTP 요청마다 실행되는 메인 보안 필터 메소드입니다.
+     * 1. 필터 활성화 여부 및 대상 경로({@link #isApplicablePath}) 여부를 확인합니다.
+     * 2. 요청에 매칭되는 서블릿 보안 정책({@link ServletPolicyRule})을 조회합니다.
+     * 3. 3대 핵심 검증기(Referer, Method, Param)를 순차적으로 실행합니다.
+     * 4. 검증 실패 시 차단된 설정 항목과 현재 서블릿 보안 설정을 상세히 로깅하고 JSON 에러 응답을 반환합니다.
+     *
+     * @param servletRequest  유입된 서블릿 요청
+     * @param servletResponse 서블릿 응답
+     * @param chain           필터 체인
+     * @throws IOException      입출력 예외
+     * @throws ServletException 서블릿 예외
+     */
     @Override
     public void doFilter(final ServletRequest servletRequest, final ServletResponse servletResponse, final FilterChain chain)
             throws IOException, ServletException {
 
         if (!enabled || !(servletRequest instanceof HttpServletRequest) || !(servletResponse instanceof HttpServletResponse)) {
+            LOG.debug("SecurityFilter skipped: filter enabled={}, isHttpRequest={}",
+                    enabled, servletRequest instanceof HttpServletRequest);
             chain.doFilter(servletRequest, servletResponse);
             return;
         }
@@ -903,6 +1071,7 @@ public class SecurityFilter implements Filter {
 
         String requestUri = httpRequest.getRequestURI();
         if (!isApplicablePath(requestUri)) {
+            LOG.debug("SecurityFilter bypassed for non-applicable path: URI=[{}]", requestUri);
             chain.doFilter(servletRequest, servletResponse);
             return;
         }
@@ -927,6 +1096,12 @@ public class SecurityFilter implements Filter {
         chain.doFilter(servletRequest, servletResponse);
     }
 
+    /**
+     * 요청 URI가 보안 필터의 빠른 경로 가드(Fast-path Guard) 검사 대상인지 판별합니다.
+     *
+     * @param uri 검사할 요청 URI
+     * @return 검사 대상 경로이면 true, 아니면 false
+     */
     public static boolean isApplicablePath(final String uri) {
         if (uri == null) {
             return false;
@@ -936,25 +1111,38 @@ public class SecurityFilter implements Filter {
                 || uri.contains("myproject/components/") || uri.contains("/components/");
     }
 
+    /**
+     * 요청에 매칭되는 서블릿 보안 정책을 찾고, 활성화된 검증기 체인(REFERER -> METHOD -> PARAM)을 실행합니다.
+     * 검증에 실패하면 즉시 {@link #handleSecurityViolation}을 호출하여 차단 로그 및 에러 응답을 처리합니다.
+     *
+     * @param request  유입된 HTTP 요청
+     * @param response HTTP 응답
+     * @return 검증 통과 시 매칭된 {@link ServletPolicyRule}, 차단 시 {@link #REJECTED_POLICY}, 정책 미적용 시 null
+     * @throws IOException 응답 작성 중 입출력 예외 발생 시
+     */
     private ServletPolicyRule evaluatePoliciesAndFindActive(final HttpServletRequest request,
                                                             final HttpServletResponse response) throws IOException {
         if (servletSecurityConfig == null || !servletSecurityConfig.isEnabled()) {
+            LOG.debug("ServletSecurityConfig is null or disabled. Skipping policy evaluation for URI=[{}]", request.getRequestURI());
             return null;
         }
 
         ServletPolicyRule matchedPolicy = servletSecurityConfig.findMatchingPolicy(request);
         if (matchedPolicy == null) {
+            LOG.debug("No matching security policy found for URI=[{}]. Allowing request.", request.getRequestURI());
             return null;
         }
 
         if (!matchedPolicy.isEnabled()) {
+            LOG.debug("Matched policy target=[{}] has enabled=false. Bypassing security validation for URI=[{}].",
+                    matchedPolicy.getTarget(), request.getRequestURI());
             return matchedPolicy;
         }
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("Evaluating policy target [{}] for [{} {}]: Methods={}, AllowedReferrers={}, Params={}",
+            LOG.debug("Evaluating policy target [{}] for [{} {}]: AppliedServletPolicy=[{}]",
                     matchedPolicy.getTarget(), request.getMethod(), request.getRequestURI(),
-                    matchedPolicy.getMethods(), matchedPolicy.getAllowedReferrers(), matchedPolicy.getParams().keySet());
+                    formatAppliedPolicyForLog(matchedPolicy));
         }
 
         // 매칭된 정책에 대해 3대 검증기 체인(REFERER -> METHOD -> PARAM) 실행
@@ -968,11 +1156,12 @@ public class SecurityFilter implements Filter {
             ValidationResult result = validator.validate(request, matchedPolicy, servletSecurityConfig);
             if (!result.isValid()) {
                 String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
-                LOG.debug("  [!] Validator [{}] FAILED for URI [{}]: Status={}, Code={}, Message={} | AppliedServletPolicy=[{}]",
+                String blockedConfigInfo = StringUtils.defaultIfBlank(result.getBlockedConfig(), result.getViolationDetail());
+                LOG.debug("  [!] Validator [{}] FAILED for URI [{}]: Status={}, Code={}, Message={} | BlockedByConfig=[{}] | AppliedServletPolicy=[{}]",
                         validator.getName(), request.getRequestURI(), result.getStatusCode(), result.getSubCode(),
-                        result.getResponseMessage(), appliedPolicyInfo);
+                        result.getResponseMessage(), blockedConfigInfo, appliedPolicyInfo);
                 handleSecurityViolation(request, response, matchedPolicy, validator.getName(), result.getStatusCode(),
-                        result.getSubCode(), result.getViolationDetail(), result.getResponseMessage());
+                        result.getSubCode(), result.getViolationDetail(), blockedConfigInfo, result.getResponseMessage());
                 return REJECTED_POLICY;
             }
             if (LOG.isDebugEnabled()) {
@@ -986,6 +1175,14 @@ public class SecurityFilter implements Filter {
         return matchedPolicy;
     }
 
+    /**
+     * 설정 로드 또는 파싱 중 예외가 발생했을 때 이전 정상 설정(Last Known Good)을 유지하거나,
+     * 초기 기동 시 안전한 폴백 설정으로 초기화합니다.
+     *
+     * @param source    설정 소스 설명 문자열 (예: "OSGi .config", "OSGi properties")
+     * @param e         발생한 예외
+     * @param isEnabled 필터 활성화 여부
+     */
     private void handleConfigFailure(final String source, final Exception e, final boolean isEnabled) {
         if (this.servletSecurityConfig != null &&
                 ((this.servletSecurityConfig.getPolicies() != null && !this.servletSecurityConfig.getPolicies().isEmpty())
@@ -1001,6 +1198,9 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * 현재 활성화된 기본 보안 정책(Default Policy)과 개별 서블릿 정책 목록을 INFO 로그로 출력합니다.
+     */
     private void logConfiguredPolicies() {
         if (servletSecurityConfig == null) {
             LOG.info("No Servlet Policies configured.");
@@ -1032,18 +1232,38 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * 서블릿 필터 종료 시 호출되는 메소드입니다.
+     */
     @Override
     public void destroy() {
     }
 
+    /**
+     * 보안 정책 위반으로 요청이 차단되었을 때 호출됩니다.
+     * 어떤 검증기와 어떤 설정 규칙({@code BlockedByConfig})에 의해 차단되었는지, 그리고 해당 서블릿에 적용된
+     * 전체 보안 설정({@code AppliedServletPolicy})이 무엇인지 WARN 로그에 상세히 기록하고 JSON 에러 응답을 반환합니다.
+     *
+     * @param request           차단된 HTTP 요청
+     * @param response          HTTP 응답
+     * @param matchedPolicy     서블릿에 적용된 보안 정책 규칙
+     * @param validatorName     차단을 수행한 검증기 이름 (REFERER, METHOD, PARAM)
+     * @param statusCode        반환할 HTTP 상태 코드 (400, 403, 405 등)
+     * @param subCode           표준 보안 에러 서브 코드
+     * @param violationDetail   차단 사유 상세 설명
+     * @param blockedConfigInfo 차단을 유발한 구체적인 설정 규칙 및 입력값 정보
+     * @param responseMessage   클라이언트에게 반환할 에러 메시지
+     * @throws IOException 응답 스트림 기록 중 예외 발생 시
+     */
     private void handleSecurityViolation(final HttpServletRequest request, final HttpServletResponse response,
                                          final ServletPolicyRule matchedPolicy, final String validatorName,
                                          final int statusCode, final String subCode,
-                                         final String violationDetail, final String responseMessage)
+                                         final String violationDetail, final String blockedConfigInfo,
+                                         final String responseMessage)
             throws IOException {
         String clientIp = SecurityUtils.getClientIp(request);
         String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
-        LOG.warn("SECURITY VIOLATION BLOCKED: Client IP=[{}], Method=[{}], URI=[{}], Validator=[{}], Status=[{}], ErrorCode=[{}], Reason=[{}] | AppliedServletPolicy=[{}]",
+        LOG.warn("SECURITY VIOLATION BLOCKED: Client IP=[{}], Method=[{}], URI=[{}], Validator=[{}], Status=[{}], ErrorCode=[{}], Reason=[{}] | BlockedByConfig=[{}] | AppliedServletPolicy=[{}]",
                 clientIp,
                 request.getMethod(),
                 SecurityUtils.sanitizeForLog(request.getRequestURI()),
@@ -1051,6 +1271,7 @@ public class SecurityFilter implements Filter {
                 statusCode,
                 subCode,
                 violationDetail,
+                blockedConfigInfo != null ? blockedConfigInfo : "UNKNOWN",
                 appliedPolicyInfo);
 
         if (!response.isCommitted()) {
@@ -1071,7 +1292,11 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * 보안 위반 로깅을 위해 매칭된 ServletPolicyRule과 원본 서블릿 클래스/출처 정보를 포맷팅합니다.
+     * 보안 위반 및 디버그 로깅을 위해 매칭된 {@link ServletPolicyRule}의 전체 보안 설정 정보와
+     * 원본 서블릿 클래스/출처 정보를 보기 좋게 포맷팅하여 반환합니다.
+     *
+     * @param matchedPolicy 포맷팅할 서블릿 보안 정책 규칙
+     * @return 서블릿 출처 및 현재 적용된 전체 보안 설정 요약 문자열
      */
     public String formatAppliedPolicyForLog(final ServletPolicyRule matchedPolicy) {
         if (matchedPolicy == null) {
@@ -1082,6 +1307,12 @@ public class SecurityFilter implements Filter {
         return "source=" + servletSource + ", " + matchedPolicy.toPolicySummaryString();
     }
 
+    /**
+     * 정책 타겟에 해당하는 서블릿의 출처(컴포넌트 이름, 서블릿 클래스명, 또는 기본 정책 여부)를 조회합니다.
+     *
+     * @param target 조회할 정책 타겟 문자열
+     * @return 정책 출처 라벨 문자열
+     */
     private String resolvePolicySourceLabel(final String target) {
         if (StringUtils.isBlank(target)) {
             return "UNKNOWN";
@@ -1105,6 +1336,14 @@ public class SecurityFilter implements Filter {
         return "ConfiguredPolicy";
     }
 
+    /**
+     * OSGi 설정({@link Config} 및 프로퍼티 맵)의 전역 검증기 On/Off 토글
+     * ({@code validator.referer.enabled}, {@code validator.method.enabled}, {@code validator.param.enabled})을
+     * {@link ServletSecurityConfig}에 반영합니다.
+     *
+     * @param config     OSGi OCD 설정 객체
+     * @param properties OSGi 프로퍼티 맵
+     */
     private void applyOsgiValidatorToggles(final Config config, final Map<String, Object> properties) {
         if (servletSecurityConfig == null) {
             return;
@@ -1121,17 +1360,29 @@ public class SecurityFilter implements Filter {
         }
     }
 
+    /**
+     * 개별 검증기 토글 프로퍼티 키를 확인하여 {@link ServletSecurityConfig}에 활성화 여부를 설정합니다.
+     *
+     * @param properties    OSGi 프로퍼티 맵
+     * @param key           프로퍼티 키 (예: "validator.referer.enabled")
+     * @param validatorName 검증기 이름 (예: "REFERER")
+     */
     private void applyPropertyValidatorToggle(final Map<String, Object> properties, final String key, final String validatorName) {
         if (properties.containsKey(key)) {
             Object val = properties.get(key);
             if (val instanceof Boolean) {
                 servletSecurityConfig.setValidatorEnabled(validatorName, (Boolean) val);
             } else if (val instanceof String) {
-                servletSecurityConfig.setValidatorEnabled(validatorName, Boolean.parseBoolean((String) val));
+                servletSecurityConfig.setValidatorEnabled(validatorName, toBoolean(val, true));
             }
         }
     }
 
+    /**
+     * 현재 필터에 로드된 루트 {@link ServletSecurityConfig} 객체를 반환합니다.
+     *
+     * @return 현재 {@link ServletSecurityConfig} 인스턴스
+     */
     public ServletSecurityConfig getServletSecurityConfig() {
         return servletSecurityConfig;
     }

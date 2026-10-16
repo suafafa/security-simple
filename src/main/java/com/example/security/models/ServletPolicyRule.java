@@ -65,6 +65,10 @@ public class ServletPolicyRule {
     private transient Map<String, ParamRule> lowerParams;
     private transient Pattern compiledTargetPattern;
 
+    /**
+     * 정책 규칙의 런타임 캐시(대문자 HTTP 메소드 집합, 소문자 Referer 집합, 소문자 키 파라미터 맵,
+     * 타겟 정규식 패턴, 검증기 활성화 맵)를 초기화하고 설정값의 유효성을 검증합니다.
+     */
     public void init() {
         if (StringUtils.isNotBlank(target) && (target.contains("*") || target.contains("^") || target.contains("$"))) {
             try {
@@ -144,10 +148,20 @@ public class ServletPolicyRule {
         }
     }
 
+    /**
+     * 로그 및 에러 메시지 출력에 사용할 타겟 식별자를 반환합니다.
+     *
+     * @return 타겟 문자열 (비어 있을 경우 "(defaultPolicy)")
+     */
     public String getTargetIdentifier() {
         return StringUtils.isNotBlank(target) ? target : "(defaultPolicy)";
     }
 
+    /**
+     * 정책 규칙의 설정값(허용 HTTP 메소드 목록, 타겟 정규식 문법, 하위 파라미터 규칙)이 유효한지 검증합니다.
+     *
+     * @param errors 검증 오류 메시지를 수집할 리스트
+     */
     public void validate(final List<String> errors) {
         String id = getTargetIdentifier();
 
@@ -180,7 +194,10 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 요청이 이 정책 규칙의 타겟(URL 경로 또는 Sling resourceType)과 일치하는지 확인합니다.
+     * 유입된 HTTP 요청이 이 정책 규칙의 타겟(URL 경로 또는 Sling resourceType)과 일치하는지 확인합니다.
+     *
+     * @param request 검사할 HTTP 요청 객체
+     * @return 요청이 타겟과 일치하면 true, 그렇지 않으면 false
      */
     public boolean matches(final HttpServletRequest request) {
         if (StringUtils.isBlank(target) || request == null) {
@@ -223,34 +240,75 @@ public class ServletPolicyRule {
         return false;
     }
 
+    /**
+     * 컴파일된 타겟 정규식 패턴 객체를 반환합니다.
+     *
+     * @return 컴파일된 {@link Pattern} (정규식 타겟이 아닐 경우 null)
+     */
     public Pattern getCompiledTargetPattern() {
         return compiledTargetPattern;
     }
 
+    /**
+     * 정책이 적용될 타겟(서블릿 경로 또는 Sling resourceType)을 반환합니다.
+     *
+     * @return 타겟 문자열
+     */
     public String getTarget() {
         return target;
     }
 
+    /**
+     * 정책이 적용될 타겟(서블릿 경로 또는 Sling resourceType)을 설정합니다.
+     *
+     * @param target 설정할 타겟 문자열
+     */
     public void setTarget(String target) {
         this.target = target;
     }
 
+    /**
+     * 이 보안 정책 규칙의 활성화 여부를 반환합니다.
+     *
+     * @return 활성화 상태이면 true (기본값 true)
+     */
     public boolean isEnabled() {
         return enabled == null || enabled;
     }
 
+    /**
+     * 이 보안 정책 규칙의 활성화 여부를 설정합니다.
+     *
+     * @param enabled 활성화 여부
+     */
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
 
+    /**
+     * 허용된 HTTP 메소드 집합(대문자)을 반환합니다.
+     *
+     * @return 허용된 HTTP 메소드 Set (미설정 시 빈 Set)
+     */
     public Set<String> getMethods() {
         return upperMethods != null ? upperMethods : Collections.emptySet();
     }
 
+    /**
+     * 허용할 HTTP 메소드 목록을 설정합니다.
+     *
+     * @param methods 허용할 HTTP 메소드 리스트
+     */
     public void setMethods(List<String> methods) {
         this.methods = methods;
     }
 
+    /**
+     * 주어진 HTTP 메소드가 이 정책 규칙에서 허용되는지 확인합니다.
+     *
+     * @param method 검사할 HTTP 메소드 문자열 (예: "GET", "POST")
+     * @return 허용된 메소드이면 true, 차단 대상이면 false
+     */
     public boolean isMethodAllowed(final String method) {
         if (upperMethods == null || upperMethods.isEmpty()) {
             return true;
@@ -261,6 +319,11 @@ public class ServletPolicyRule {
         return upperMethods.contains(method.trim().toUpperCase());
     }
 
+    /**
+     * 파라미터 이름을 키(소문자)로 하는 파라미터 검증 규칙 맵을 반환합니다.
+     *
+     * @return 파라미터 규칙 Map
+     */
     public Map<String, ParamRule> getParams() {
         if (lowerParams != null) {
             return lowerParams;
@@ -268,58 +331,129 @@ public class ServletPolicyRule {
         return params != null ? params : Collections.emptyMap();
     }
 
+    /**
+     * 파라미터 검증 규칙 맵을 설정합니다.
+     *
+     * @param params 설정할 파라미터 규칙 Map
+     */
     public void setParams(Map<String, ParamRule> params) {
         this.params = params;
     }
 
+    /**
+     * 정책에 명시되지 않은 미정의 파라미터의 허용 여부를 반환합니다.
+     *
+     * @return 미정의 파라미터를 허용하면 true, 차단하면 false (기본값 false)
+     */
     public boolean isAllowUndefinedParams() {
         return allowUndefinedParams != null ? allowUndefinedParams : false;
     }
 
+    /**
+     * 정책에 명시되지 않은 미정의 파라미터의 허용 여부를 설정합니다.
+     *
+     * @param allowUndefinedParams 미정의 파라미터 허용 여부
+     */
     public void setAllowUndefinedParams(Boolean allowUndefinedParams) {
         this.allowUndefinedParams = allowUndefinedParams;
     }
 
+    /**
+     * 이 정책 규칙에서 추가로 허용하는 Referer 도메인/패턴 집합(소문자)을 반환합니다.
+     *
+     * @return 허용된 Referer 도메인 Set
+     */
     public Set<String> getAllowedReferrers() {
         return lowerAllowedReferrers != null ? lowerAllowedReferrers : Collections.emptySet();
     }
 
+    /**
+     * 이 정책 규칙에서 허용할 Referer 도메인/패턴 목록을 설정합니다.
+     *
+     * @param allowedReferrers 허용할 Referer 목록
+     */
     public void setAllowedReferrers(List<String> allowedReferrers) {
         this.allowedReferrers = allowedReferrers;
     }
 
+    /**
+     * 기본 허용 Referer 도메인을 반환합니다.
+     *
+     * @return 기본 허용 Referer 도메인 문자열
+     */
     public String getDefaultReferrer() {
         return defaultReferrer;
     }
 
+    /**
+     * 기본 허용 Referer 도메인을 설정합니다.
+     *
+     * @param defaultReferrer 기본 허용 Referer 도메인 문자열
+     */
     public void setDefaultReferrer(String defaultReferrer) {
         this.defaultReferrer = defaultReferrer;
     }
 
+    /**
+     * 기본 허용 Referer 도메인을 반환합니다 ({@link #getDefaultReferrer()}의 별칭).
+     *
+     * @return 기본 허용 Referer 도메인 문자열
+     */
     public String getDefaultReferer() {
         return defaultReferrer;
     }
 
+    /**
+     * 기본 허용 Referer 도메인을 설정합니다 ({@link #setDefaultReferrer(String)}의 별칭).
+     *
+     * @param defaultReferer 기본 허용 Referer 도메인 문자열
+     */
     public void setDefaultReferer(String defaultReferer) {
         this.defaultReferrer = defaultReferer;
     }
 
+    /**
+     * 파라미터 값에 대한 SQL/JCR2 인젝션 패턴 차단 활성화 여부를 반환합니다.
+     *
+     * @return SQL 인젝션 차단이 활성화되어 있으면 true (기본값 true)
+     */
     public boolean isBlockSqlInjection() {
         return blockSqlInjection == null || blockSqlInjection;
     }
 
+    /**
+     * 파라미터 값에 대한 SQL/JCR2 인젝션 패턴 차단 활성화 여부를 설정합니다.
+     *
+     * @param blockSqlInjection SQL 인젝션 차단 여부
+     */
     public void setBlockSqlInjection(Boolean blockSqlInjection) {
         this.blockSqlInjection = blockSqlInjection;
     }
 
+    /**
+     * 파라미터 값에 대한 크로스 사이트 스크립팅(XSS) 패턴 차단 활성화 여부를 반환합니다.
+     *
+     * @return XSS 차단이 활성화되어 있으면 true (기본값 true)
+     */
     public boolean isBlockXss() {
         return blockXss == null || blockXss;
     }
 
+    /**
+     * 파라미터 값에 대한 크로스 사이트 스크립팅(XSS) 패턴 차단 활성화 여부를 설정합니다.
+     *
+     * @param blockXss XSS 차단 여부
+     */
     public void setBlockXss(Boolean blockXss) {
         this.blockXss = blockXss;
     }
 
+    /**
+     * 이 정책 규칙에서 특정 검증기(예: "REFERER", "METHOD", "PARAM")가 활성화되어 있는지 확인합니다.
+     *
+     * @param validatorName 확인할 검증기 이름
+     * @return 활성화되어 있으면 true, 비활성화되어 있으면 false
+     */
     public boolean isValidatorEnabled(String validatorName) {
         if (validatorStatusMap != null && validatorName != null) {
             Boolean status = validatorStatusMap.get(validatorName.trim().toUpperCase());
@@ -333,6 +467,8 @@ public class ServletPolicyRule {
     /**
      * 상위 정책(예: defaultPolicy)으로부터 기본 보안 정책 설정을 상속받습니다.
      * 현재 규칙에 명시적으로 설정된 속성이 항상 우선권을 가집니다.
+     *
+     * @param parent 상속받을 부모 정책 규칙 (주로 defaultPolicy)
      */
     public void inheritFrom(ServletPolicyRule parent) {
         if (parent == null) {
@@ -380,6 +516,11 @@ public class ServletPolicyRule {
         }
     }
 
+    /**
+     * 다른 {@link ServletPolicyRule} 객체의 모든 설정 필드를 현재 객체로 깊은 복사(Deep Copy)합니다.
+     *
+     * @param other 복사할 원본 정책 규칙 객체
+     */
     public void copyFrom(ServletPolicyRule other) {
         if (other == null) return;
         this.target = other.target;
@@ -394,9 +535,13 @@ public class ServletPolicyRule {
     }
 
     /**
-     * OSGi 서블릿 컴포넌트 속성을 파싱하여 하나 이상의 ServletPolicyRule 인스턴스를 생성합니다.
-     * 'sling.servlet.paths' 또는 'sling.servlet.resourceTypes'에서 타겟을 추출하고,
-     * 'security.*' 속성을 규칙에 매핑한 뒤 defaultPolicy로부터 기본 설정을 상속받습니다.
+     * OSGi 서블릿 컴포넌트 속성을 파싱하여 하나 이상의 {@link ServletPolicyRule} 인스턴스를 생성합니다.
+     * {@code sling.servlet.paths} 또는 {@code sling.servlet.resourceTypes}에서 타겟을 추출하고,
+     * {@code security.*} 속성을 규칙에 매핑한 뒤 {@code defaultPolicy}로부터 기본 설정을 상속받습니다.
+     *
+     * @param props         서블릿의 OSGi 컴포넌트 프로퍼티 맵
+     * @param defaultPolicy 상속할 기본 정책 규칙
+     * @return 생성 및 초기화된 {@link ServletPolicyRule} 리스트
      */
     public static List<ServletPolicyRule> fromOsgiProperties(Map<String, Object> props, ServletPolicyRule defaultPolicy) {
         if (props == null || props.isEmpty()) {
@@ -438,8 +583,13 @@ public class ServletPolicyRule {
     }
 
     /**
-     * OSGi 속성으로부터 특정 타겟 경로/resourceType에 대한 ServletPolicyRule을 파싱합니다.
+     * OSGi 속성으로부터 특정 타겟 경로/resourceType에 대한 {@link ServletPolicyRule}을 파싱합니다.
      * 서블릿 공통 속성(서블릿의 모든 경로에 적용)과 타겟별 개별 재정의(Override)를 모두 지원합니다.
+     *
+     * @param props         서블릿의 OSGi 컴포넌트 프로퍼티 맵
+     * @param currentTarget 현재 파싱 중인 타겟 경로 또는 resourceType
+     * @param allTargets    해당 서블릿에 선언된 모든 타겟 목록
+     * @return 파싱된 {@link ServletPolicyRule} 객체
      */
     private static ServletPolicyRule parseRuleForTarget(Map<String, Object> props, String currentTarget, List<String> allTargets) {
         ServletPolicyRule rule = new ServletPolicyRule();
@@ -573,6 +723,14 @@ public class ServletPolicyRule {
         return rule;
     }
 
+    /**
+     * 설정 문자열에서 타겟 경로 접두사(예: {@code [/aemapi/path]value} 또는 {@code /aemapi/path:value})와
+     * 실제 설정 본문을 분리합니다.
+     *
+     * @param rawValue   원본 설정 문자열
+     * @param allTargets 서블릿의 전체 타겟 목록
+     * @return 길이 2의 배열 {@code [타겟 접두사(없으면 null), 설정 본문]}
+     */
     private static String[] splitTargetPrefix(String rawValue, List<String> allTargets) {
         if (rawValue == null) {
             return new String[]{null, ""};
@@ -608,6 +766,14 @@ public class ServletPolicyRule {
         return new String[]{null, trimmed};
     }
 
+    /**
+     * OSGi 프로퍼티 맵에서 기본 키 및 타겟별 확장 키에 해당하는 문자열 항목들을 모두 추출합니다.
+     *
+     * @param props         OSGi 프로퍼티 맵
+     * @param currentTarget 현재 타겟 경로
+     * @param baseKeys      검색할 기본 프로퍼티 키 목록
+     * @return 추출된 원본 문자열 리스트
+     */
     private static List<String> extractRawStringEntriesWithTargetKeys(Map<String, Object> props, String currentTarget, String... baseKeys) {
         List<String> rawEntries = new ArrayList<>();
         for (String k : baseKeys) {
@@ -628,6 +794,13 @@ public class ServletPolicyRule {
         return rawEntries;
     }
 
+    /**
+     * OSGi 프로퍼티 맵에서 단일 키에 저장된 값(String[], Collection, 또는 단일 String)을 문자열 리스트로 추출합니다.
+     *
+     * @param props OSGi 프로퍼티 맵
+     * @param key   추출할 프로퍼티 키
+     * @return 문자열 리스트
+     */
     private static List<String> extractRawStringsForKey(Map<String, Object> props, String key) {
         if (!props.containsKey(key) || props.get(key) == null) {
             return Collections.emptyList();
@@ -653,6 +826,16 @@ public class ServletPolicyRule {
         return list;
     }
 
+    /**
+     * 특정 타겟에 해당하는 문자열 리스트 설정을 추출합니다.
+     * 타겟 전용 설정이 존재하면 공통 설정보다 우선 적용합니다.
+     *
+     * @param props         OSGi 프로퍼티 맵
+     * @param currentTarget 현재 타겟 경로
+     * @param allTargets    서블릿의 전체 타겟 목록
+     * @param keys          검색할 프로퍼티 키 목록
+     * @return 추출된 문자열 리스트
+     */
     private static List<String> extractTargetStringList(Map<String, Object> props, String currentTarget, List<String> allTargets, String... keys) {
         List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, keys);
         List<String> targetSpecific = new ArrayList<>();
@@ -679,6 +862,16 @@ public class ServletPolicyRule {
         return !targetSpecific.isEmpty() ? targetSpecific : common;
     }
 
+    /**
+     * 특정 타겟에 해당하는 단일 문자열 설정을 추출합니다.
+     * 타겟 전용 설정이 존재하면 공통 설정보다 우선 적용합니다.
+     *
+     * @param props         OSGi 프로퍼티 맵
+     * @param currentTarget 현재 타겟 경로
+     * @param allTargets    서블릿의 전체 타겟 목록
+     * @param keys          검색할 프로퍼티 키 목록
+     * @return 추출된 문자열 (없으면 null)
+     */
     private static String extractTargetString(Map<String, Object> props, String currentTarget, List<String> allTargets, String... keys) {
         List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, keys);
         String targetSpecific = null;
@@ -701,6 +894,13 @@ public class ServletPolicyRule {
         return targetSpecific != null ? targetSpecific : common;
     }
 
+    /**
+     * OSGi 프로퍼티 맵에서 지정된 키들의 값을 문자열 리스트로 추출합니다.
+     *
+     * @param props OSGi 프로퍼티 맵
+     * @param keys  검색할 키 목록
+     * @return 추출된 문자열 리스트
+     */
     private static List<String> extractStringList(Map<String, Object> props, String... keys) {
         for (String k : keys) {
             if (props.containsKey(k)) {
@@ -737,6 +937,13 @@ public class ServletPolicyRule {
         return Collections.emptyList();
     }
 
+    /**
+     * OSGi 프로퍼티 맵에서 지정된 키들의 값을 Boolean으로 추출합니다.
+     *
+     * @param props OSGi 프로퍼티 맵
+     * @param keys  검색할 키 목록
+     * @return 추출된 Boolean 값 (없으면 null)
+     */
     private static Boolean extractBoolean(Map<String, Object> props, String... keys) {
         for (String k : keys) {
             if (props.containsKey(k)) {
@@ -751,6 +958,14 @@ public class ServletPolicyRule {
         return null;
     }
 
+    /**
+     * 소괄호 {@code (...)} 내부에 있는 구분자(delimiter)는 무시하면서 문자열을 분리합니다.
+     * 예: {@code pattern(^[a-z:0-9]+$):10}을 {@code ':'} 기준으로 안전하게 분리할 때 사용합니다.
+     *
+     * @param input     분리할 원본 문자열
+     * @param delimiter 구분 문자
+     * @return 분리된 토큰 리스트
+     */
     public static List<String> splitPreservingParens(String input, char delimiter) {
         List<String> tokens = new ArrayList<>();
         if (input == null) return tokens;
@@ -777,6 +992,13 @@ public class ServletPolicyRule {
         return tokens;
     }
 
+    /**
+     * 간편 DSL 형식의 파라미터 설정 문자열(예: {@code "userId:required:alnum:4..20"})을 파싱하여
+     * 파라미터 이름과 {@link ParamRule} 엔트리를 생성합니다.
+     *
+     * @param fullSpec 간편 DSL 형식의 파라미터 규칙 문자열
+     * @return 파싱된 {@code (파라미터명, ParamRule)} 엔트리 (유효하지 않으면 null)
+     */
     public static Map.Entry<String, ParamRule> parseSimpleParamSpec(String fullSpec) {
         if (StringUtils.isBlank(fullSpec)) return null;
         String clean = fullSpec.trim();
@@ -868,6 +1090,8 @@ public class ServletPolicyRule {
 
     /**
      * 해당 서블릿/타겟에 적용된 보안 설정 정보(Method, Referer, Param)를 사람이 읽기 쉬운 요약 문자열로 반환합니다.
+     *
+     * @return 현재 보안 정책 설정 요약 문자열
      */
     public String toPolicySummaryString() {
         StringBuilder sb = new StringBuilder();
@@ -901,6 +1125,11 @@ public class ServletPolicyRule {
         return sb.toString();
     }
 
+    /**
+     * 정책 규칙의 문자열 표현을 반환합니다.
+     *
+     * @return 요약 문자열을 포함한 문자열 표현
+     */
     @Override
     public String toString() {
         return "ServletPolicyRule[" + toPolicySummaryString() + "]";

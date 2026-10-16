@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * 파라미터의 길이 제약조건, 정규식 패턴, 인젝션/XSS 허용 여부 및 활성화 상태를 정의하는 모델 클래스입니다.
+ * 개별 파라미터의 필수 여부(required), 길이 제약조건(minLength, maxLength),
+ * 정규식 패턴(pattern), 경로 조작/인젝션/XSS 허용 여부 및 활성화 상태를 정의하는 모델 클래스입니다.
  */
 public class ParamRule {
 
@@ -27,34 +28,41 @@ public class ParamRule {
     private String pattern;
 
     /**
-     * 경로 조작(Path Traversal: ../ 등) 허용 여부.
-     * 기본값은 false이며, 특별한 사유가 없는 한 상위 디렉토리 이동 시퀀스는 자동 차단됩니다.
+     * 경로 조작(Path Traversal: ../ 등) 허용 여부 (기본값: false 차단)
      */
     @SerializedName("allowPathTraversal")
     private Boolean allowPathTraversal = false;
 
     /**
-     * CWE-89: SQL / JCR-SQL2 / XPath 인젝션 구문 허용 여부.
-     * 기본값은 false이며, DB/JCR 조작 공격 구문이 포함된 경우 400 Bad Request로 자동 차단됩니다.
+     * CWE-89: SQL / JCR-SQL2 / XPath 인젝션 구문 허용 여부 (기본값: false 차단)
      */
     @SerializedName("allowSqlInjection")
     private Boolean allowSqlInjection = false;
 
     /**
-     * CWE-79: Cross-Site Scripting (XSS) 스크립트 태그 및 이벤트 핸들러 허용 여부.
-     * 기본값은 false이며, <script>, onload=, javascript: 등의 악성 태그가 감지되면 400 Bad Request로 자동 차단됩니다.
+     * CWE-79: Cross-Site Scripting (XSS) 스크립트 태그 및 이벤트 핸들러 허용 여부 (기본값: false 차단)
      */
     @SerializedName("allowXss")
     private Boolean allowXss = false;
 
     private transient Pattern compiledPattern;
 
+    /**
+     * 설정된 정규식 문자열(pattern)을 사전 컴파일하여 런타임 캐시에 저장합니다.
+     */
     public void init() {
         if (StringUtils.isNotBlank(pattern)) {
             this.compiledPattern = Pattern.compile(pattern.trim());
         }
     }
 
+    /**
+     * 파라미터 규칙의 정규식 문법 및 최소/최대 길이 설정의 유효성을 검사합니다.
+     *
+     * @param paramName 파라미터 이름
+     * @param target    서블릿 타겟 식별자
+     * @param errors    검증 오류 메시지를 수집할 리스트
+     */
     public void validate(final String paramName, final String target, final List<String> errors) {
         if (StringUtils.isNotBlank(pattern)) {
             try {
@@ -74,42 +82,92 @@ public class ParamRule {
         }
     }
 
+    /**
+     * 이 파라미터 규칙이 활성화되어 있는지 반환합니다.
+     *
+     * @return 활성화 여부 (기본값 true)
+     */
     public boolean isEnabled() {
         return enabled == null || enabled;
     }
 
-    public boolean isRequired() {
-        return required != null && required;
-    }
-
-    public void setRequired(Boolean required) {
-        this.required = required;
-    }
-
+    /**
+     * 파라미터 규칙의 활성화 여부를 설정합니다.
+     *
+     * @param enabled 활성화 여부
+     */
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
 
+    /**
+     * 이 파라미터가 필수(required)인지 반환합니다.
+     *
+     * @return 필수 여부 (기본값 false)
+     */
+    public boolean isRequired() {
+        return required != null && required;
+    }
+
+    /**
+     * 파라미터의 필수 여부를 설정합니다.
+     *
+     * @param required 필수 여부
+     */
+    public void setRequired(Boolean required) {
+        this.required = required;
+    }
+
+    /**
+     * 허용되는 최소 글자 수(minLength)를 반환합니다.
+     *
+     * @return 최소 글자 수 (미설정 시 null)
+     */
     public Integer getMinLength() {
         return minLength;
     }
 
+    /**
+     * 허용되는 최소 글자 수(minLength)를 설정합니다.
+     *
+     * @param minLength 최소 글자 수
+     */
     public void setMinLength(Integer minLength) {
         this.minLength = minLength;
     }
 
+    /**
+     * 허용되는 최대 글자 수(maxLength)를 반환합니다.
+     *
+     * @return 최대 글자 수 (미설정 시 null)
+     */
     public Integer getMaxLength() {
         return maxLength;
     }
 
+    /**
+     * 허용되는 최대 글자 수(maxLength)를 설정합니다.
+     *
+     * @param maxLength 최대 글자 수
+     */
     public void setMaxLength(Integer maxLength) {
         this.maxLength = maxLength;
     }
 
+    /**
+     * 파라미터 값 검증용 정규식 패턴 문자열을 반환합니다.
+     *
+     * @return 정규식 문자열 (미설정 시 null)
+     */
     public String getPattern() {
         return pattern;
     }
 
+    /**
+     * 파라미터 값 검증용 정규식 패턴 문자열을 설정하고 즉시 컴파일합니다.
+     *
+     * @param pattern 정규식 문자열
+     */
     public void setPattern(String pattern) {
         this.pattern = pattern;
         if (StringUtils.isNotBlank(pattern)) {
@@ -119,48 +177,86 @@ public class ParamRule {
         }
     }
 
+    /**
+     * 사전 컴파일된 정규식 Pattern 객체를 반환합니다.
+     *
+     * @return 컴파일된 Pattern 객체 (미설정 시 null)
+     */
     public Pattern getCompiledPattern() {
+        if (compiledPattern == null && StringUtils.isNotBlank(pattern)) {
+            compiledPattern = Pattern.compile(pattern.trim());
+        }
         return compiledPattern;
     }
 
+    /**
+     * 해당 파라미터에 대해 경로 조작(Path Traversal) 구문 허용 여부를 반환합니다.
+     *
+     * @return 허용 시 true, 차단 시 false (기본값 false)
+     */
     public boolean isAllowPathTraversal() {
         return allowPathTraversal != null && allowPathTraversal;
     }
 
+    /**
+     * 해당 파라미터에 대해 경로 조작(Path Traversal) 구문 허용 여부를 설정합니다.
+     *
+     * @param allowPathTraversal 허용 여부
+     */
     public void setAllowPathTraversal(Boolean allowPathTraversal) {
         this.allowPathTraversal = allowPathTraversal;
     }
 
+    /**
+     * 해당 파라미터에 대해 SQL/JCR 인젝션 구문 허용 여부를 반환합니다.
+     *
+     * @return 허용 시 true, 차단 시 false (기본값 false)
+     */
     public boolean isAllowSqlInjection() {
         return allowSqlInjection != null && allowSqlInjection;
     }
 
+    /**
+     * 해당 파라미터에 대해 SQL/JCR 인젝션 구문 허용 여부를 설정합니다.
+     *
+     * @param allowSqlInjection 허용 여부
+     */
     public void setAllowSqlInjection(Boolean allowSqlInjection) {
         this.allowSqlInjection = allowSqlInjection;
     }
 
+    /**
+     * 해당 파라미터에 대해 XSS 스크립트 태그 허용 여부를 반환합니다.
+     *
+     * @return 허용 시 true, 차단 시 false (기본값 false)
+     */
     public boolean isAllowXss() {
         return allowXss != null && allowXss;
     }
 
+    /**
+     * 해당 파라미터에 대해 XSS 스크립트 태그 허용 여부를 설정합니다.
+     *
+     * @param allowXss 허용 여부
+     */
     public void setAllowXss(Boolean allowXss) {
         this.allowXss = allowXss;
     }
 
     /**
-     * 보안 위반 로그 출력용 파라미터 규칙 요약 문자열을 반환합니다.
+     * 로그 출력을 위해 이 파라미터 규칙의 핵심 제약조건(필수 여부, 길이 범위, 정규식)을 요약 문자열로 반환합니다.
+     *
+     * @return 파라미터 규칙 요약 문자열
      */
     public String toSummaryString() {
         StringBuilder sb = new StringBuilder("{");
         sb.append("required=").append(isRequired());
         if (minLength != null || maxLength != null) {
-            sb.append(", len=")
-              .append(minLength != null ? minLength : 0)
-              .append("..")
-              .append(maxLength != null ? maxLength : "MAX");
+            sb.append(", len=").append(minLength != null ? minLength : 0)
+              .append("..").append(maxLength != null ? maxLength : "MAX");
         }
         if (StringUtils.isNotBlank(pattern)) {
-            sb.append(", pattern='").append(pattern).append("'");
+            sb.append(", pattern=").append(pattern);
         }
         if (isAllowPathTraversal()) {
             sb.append(", allowPathTraversal=true");
