@@ -309,7 +309,7 @@
       <div class="slide-body">
         <div class="flow-row">
           <div class="flow-step"><h4>STEP 1. 요청 유입</h4><p>Client / Browser<br/><code>/aemapi/...</code></p></div>
-          <div class="flow-step" style="border-top-color:#0d9488;"><h4>STEP 2. 경로 가드</h4><p><code>isApplicablePath()</code><br/>대상 경로 고속 판별</p></div>
+          <div class="flow-step" style="border-top-color:#0d9488;"><h4>STEP 2. 패턴 가드</h4><p><code>matchesFilterPattern()</code><br/>설정 정규식 매칭</p></div>
           <div class="flow-step" style="border-top-color:#4f46e5;"><h4>STEP 3. 정책 매칭</h4><p><code>findMatchingPolicy()</code><br/>Tier 1~6 우선순위 조회</p></div>
           <div class="flow-step" style="border-top-color:#d97706;"><h4>STEP 4. 검증기 체인</h4><p>1. Referer<br/>2. Method → 3. Param</p></div>
           <div class="flow-step" style="border-top-color:#16a34a;"><h4>STEP 5-A. 검증 통과</h4><p><code>PassedConfig</code> 기록<br/><code>chain.doFilter()</code></p></div>

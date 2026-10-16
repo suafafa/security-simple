@@ -269,9 +269,6 @@ public class SecurityFilter implements Filter {
         if (!cleanTarget.startsWith("/") && pattern.matcher("/" + cleanTarget).matches()) {
             return true;
         }
-        if (cleanTarget.contains("/components/") && DEFAULT_FILTER_PATTERN.equals(this.filterPattern)) {
-            return true;
-        }
         return false;
     }
 
@@ -1044,7 +1041,7 @@ public class SecurityFilter implements Filter {
 
     /**
      * 매 HTTP 요청마다 실행되는 메인 보안 필터 메소드입니다.
-     * 1. 필터 활성화 여부 및 대상 경로({@link #isApplicablePath}) 여부를 확인합니다.
+     * 1. 필터 활성화 여부 및 설정된 필터 패턴({@link #matchesFilterPattern}) 일치 여부를 확인합니다.
      * 2. 요청에 매칭되는 서블릿 보안 정책({@link ServletPolicyRule})을 조회합니다.
      * 3. 3대 핵심 검증기(Referer, Method, Param)를 순차적으로 실행합니다.
      * 4. 검증 실패 시 차단된 설정 항목과 현재 서블릿 보안 설정을 상세히 로깅하고 JSON 에러 응답을 반환합니다.
@@ -1070,8 +1067,8 @@ public class SecurityFilter implements Filter {
         HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
 
         String requestUri = httpRequest.getRequestURI();
-        if (!isApplicablePath(requestUri)) {
-            LOG.debug("SecurityFilter bypassed for non-applicable path: URI=[{}]", requestUri);
+        if (!matchesFilterPattern(requestUri)) {
+            LOG.debug("SecurityFilter bypassed for non-matching filter pattern ({}): URI=[{}]", filterPattern, requestUri);
             chain.doFilter(servletRequest, servletResponse);
             return;
         }
@@ -1094,21 +1091,6 @@ public class SecurityFilter implements Filter {
         }
 
         chain.doFilter(servletRequest, servletResponse);
-    }
-
-    /**
-     * 요청 URI가 보안 필터의 빠른 경로 가드(Fast-path Guard) 검사 대상인지 판별합니다.
-     *
-     * @param uri 검사할 요청 URI
-     * @return 검사 대상 경로이면 true, 아니면 false
-     */
-    public static boolean isApplicablePath(final String uri) {
-        if (uri == null) {
-            return false;
-        }
-        return uri.startsWith("/aemapi/") || uri.startsWith("/sysapi/") || uri.equals("/aemapi") || uri.equals("/sysapi")
-                || uri.startsWith("/bin/") || uri.startsWith("/api/") || uri.equals("/bin") || uri.equals("/api")
-                || uri.contains("myproject/components/") || uri.contains("/components/");
     }
 
     /**

@@ -45,6 +45,7 @@ class SecurityFilterTest {
 
     private static final String SAMPLE_JSON_CONFIG = "{\n" +
             "  \"enabled\": true,\n" +
+            "  \"sling.filter.pattern\": \"(/aemapi/.*|/sysapi/.*|/content/.*)\",\n" +
             "  \"defaultReferrer\": \"abc.com\",\n" +
             "  \"policies\": [\n" +
             "    {\n" +
