@@ -26,7 +26,124 @@ AEM 6.5 서블릿을 위한 **경량 보안 필터(`SecurityFilter`)** 프로젝
 
 ---
 
-## ⚙️ 2. 전역 OSGi 설정 (`config/com.example.security.filters.SecurityFilter.config`)
+## 🏛️ 2. 필터 핵심 데이터 구조 및 관계도 (Data Structures & Model)
+
+필터는 객체 간 명확한 계층 분리와 런타임 O(1) 고속 조회를 위해 체계적인 데이터 모델 구조를 가집니다:
+
+```mermaid
+classDiagram
+    direction TB
+
+    class SecurityFilter {
+        +boolean enabled
+        +String filterPattern
+        +Pattern compiledFilterPattern
+        +ServletSecurityConfig servletSecurityConfig
+        +Map~Servlet, Map~ boundServlets
+        +List~PolicyValidator~ validators
+        +doFilter(request, response, chain)
+    }
+
+    class ServletSecurityConfig {
+        +boolean enabled
+        +String defaultReferrer
+        +ServletPolicyRule defaultPolicy
+        +List~ServletPolicyRule~ policies
+        +Map~String, ServletPolicyRule~ dynamicExactUriMap
+        +Map~String, ServletPolicyRule~ dynamicResourceTypeMap
+        +List~ServletPolicyRule~ dynamicPatternPolicies
+        +Map~String, Boolean~ validatorStatusMap
+        +findMatchingPolicy(request) ServletPolicyRule
+        +registerDynamicPolicy(rule)
+    }
+
+    class ServletPolicyRule {
+        +String target
+        +Boolean enabled
+        +List~String~ methods
+        +Set~String~ upperMethods
+        +String defaultReferrer
+        +List~String~ allowedReferrers
+        +Boolean allowUndefinedParams
+        +Boolean blockSqlInjection
+        +Boolean blockXss
+        +Map~String, ParamRule~ params
+        +inheritFrom(defaultPolicy)
+        +matches(request) boolean
+    }
+
+    class ParamRule {
+        +String name
+        +Boolean required
+        +Integer minLength
+        +Integer maxLength
+        +String pattern
+        +Pattern compiledPattern
+        +String type
+        +Boolean allowSqlInjection
+        +Boolean allowXss
+        +Boolean allowPathTraversal
+        +validateValue(name, value) ValidationResult
+    }
+
+    class ValidationResult {
+        +boolean valid
+        +int statusCode
+        +String subCode
+        +String responseMessage
+        +String violationDetail
+        +String blockedConfig
+    }
+
+    SecurityFilter --> ServletSecurityConfig : 보유 및 라이프사이클 관리
+    ServletSecurityConfig --> ServletPolicyRule : defaultPolicy (전역 기본 정책)
+    ServletSecurityConfig --> ServletPolicyRule : policies / dynamicPolicies (서블릿별 등록)
+    ServletPolicyRule --> ParamRule : params (Map~파라미터명, ParamRule~)
+    ParamRule ..> ValidationResult : 검증 결과 반환
+```
+
+### 데이터 모델 계층 및 역할 명세
+
+| 계층 / 모델 클래스 | 역할 및 보유 데이터 | 데이터 원천 (Source) | 핵심 특징 |
+| :--- | :--- | :--- | :--- |
+| **`SecurityFilter`**<br>(루트 필터) | • 필터 전체 활성화 여부(`enabled`)<br>• 필터 정규식(`sling.filter.pattern`)<br>• 바인딩된 서블릿 추적 캐시(`boundServlets`)<br>• 3대 검증기 인스턴스 체인 | OSGi Configuration Admin<br>(`SecurityFilter.config`) | Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할을 수행하며, 서블릿 동적 바인딩을 감지 |
+| **`ServletSecurityConfig`**<br>(전체 정책 컨테이너) | • 전역 기본 정책(`defaultPolicy`)<br>• 서블릿별 보안 정책 컬렉션(`policies`)<br>• O(1) 고속 매칭 인덱스(`dynamicExactUriMap`, `dynamicResourceTypeMap`)<br>• 검증기 On/Off 상태 맵 | `SecurityFilter.config` +<br>동적 바인딩 서블릿 프로퍼티 | 요청 인입 시 6단계 우선순위(URI 정확 일치 → ResourceType → 정규식 패턴 → DefaultPolicy)로 O(1) 고속 탐색 |
+| **`ServletPolicyRule`**<br>(타겟별 보안 정책) | • 타겟 식별자(`target`: 경로 또는 resourceType)<br>• 허용 HTTP 메서드 화이트리스트(`methods`)<br>• 허용 Referer 목록(`allowedReferrers`)<br>• SQLi/XSS 차단 플래그<br>• 미정의 파라미터 허용 여부(`allowUndefinedParams`)<br>• 파라미터 검증 맵(`params`) | 서블릿 `@Component`<br>`security.*` 프로퍼티 | `inheritFrom(defaultPolicy)`를 통해 서블릿에 선언되지 않은 기본값 및 공통 파라미터(`default.params`)를 자동 상속/병합 |
+| **`ParamRule`**<br>(파라미터 검증 단위) | • 파라미터명(`name`)<br>• 필수 여부(`required`)<br>• 길이 제약(`minLength`, `maxLength`)<br>• 사전 컴파일된 정규식(`compiledPattern`)<br>• 타입 별칭(`digits`, `alnum`, `email` 등)<br>• 예외 플래그(`allowSqlInjection` 등) | 서블릿 `security.params` DSL<br>또는 JSON 속성 | 인입 파라미터의 값 하나하나에 대해 타입, 길이, 정규식, SQLi/XSS/PathTraversal 공격 구문을 정밀 검증 |
+| **`ValidationResult`**<br>(검증 결과 DTO) | • 검증 성공 여부(`valid`)<br>• HTTP 응답 상태 코드(`400`, `403`, `405`)<br>• 표준 에러 서브코드(`SEC-40001` ~ `SEC-40501`)<br>• 에러 메시지 및 상세 차단 원인(`BlockedByConfig`) | 각 `PolicyValidator` 검증 실행 시 반환 | 검증 실패 시 상위 필터로 차단 사유를 전달하여 즉각적인 Fail-Fast JSON 응답 생성 |
+
+---
+
+### 데이터 상속 및 병합 (Inheritance & Merge) 구조
+
+서블릿이 OSGi 컨테이너에 등록될 때, **기본 정책(`defaultPolicy`)과 서블릿 개별 정책(`rule`)의 데이터는 다음과 같이 합성(Merge)**됩니다:
+
+```text
+[OSGi 전역 설정: SecurityFilter.config]
+  └─ defaultPolicy (ServletPolicyRule)
+       ├─ methods = [GET, POST]
+       ├─ defaultReferrer = "abc.com"
+       ├─ blockSqlInjection = true, blockXss = true
+       ├─ allowUndefinedParams = false
+       └─ params = {page: ParamRule, size: ParamRule, sort: ParamRule, ...}
+            │
+            │  inheritFrom(defaultPolicy) 자동 상속
+            ▼
+[개별 서블릿: @Component property]
+  └─ 서블릿 정책 (ServletPolicyRule: target="/aemapi/member/register")
+       ├─ methods = [POST]                   <-- 서블릿 개별 설정으로 재정의 (Override)
+       ├─ defaultReferrer = "abc.com"        <-- defaultPolicy 값 상속
+       ├─ blockSqlInjection = true, ...      <-- defaultPolicy 값 상속
+       ├─ allowUndefinedParams = false       <-- defaultPolicy 값 상속
+       └─ params = {
+            page: ParamRule, size: ParamRule <-- defaultPolicy의 기본 파라미터 자동 상속!
+            userId: ParamRule, email: ...    <-- 서블릿 전용 파라미터 규칙 추가/병합!
+          }
+```
+
+---
+
+## ⚙️ 3. 전역 OSGi 설정 (`config/com.example.security.filters.SecurityFilter.config`)
 
 ```ini
 enabled=B"true"
@@ -54,7 +171,7 @@ default.params=[ \
 
 ---
 
-## 🧩 3. 서블릿 파라미터(`security.params`) 설정 가이드 — 케이스별 상세 예제
+## 🧩 4. 서블릿 파라미터(`security.params`) 설정 가이드 — 케이스별 상세 예제
 
 서블릿 클래스 상단의 `@Component(property = { ... })` 안에서 콜론(`:`) 구분자 기반의 간편 DSL 문법(`"파라미터명:필수여부:타입또는패턴:길이"`)으로 모든 파라미터 검증 규칙을 선언할 수 있습니다.  
 토큰 순서는 첫 번째 `파라미터명`만 고정이며, 나머지 토큰(`required`, `타입`, `길이`)은 순서에 관계없이 자유롭게 조합할 수 있습니다.
@@ -258,7 +375,7 @@ property = {
 
 ---
 
-## 🚨 4. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
+## 🚨 5. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
 
 요청이 필터에 의해 차단되면 **어떤 설정 규칙과 입력값 때문에 막혔는지(`BlockedByConfig`)**와 **해당 서블릿에 적용된 전체 보안 설정(`AppliedServletPolicy`)**이 동시에 출력됩니다:
 
