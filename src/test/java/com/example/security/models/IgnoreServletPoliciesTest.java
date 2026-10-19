@@ -8,6 +8,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -61,5 +63,32 @@ public class IgnoreServletPoliciesTest {
         assertNotNull(matched);
         assertEquals("DEFAULT", matched.getTarget());
         assertEquals("abc.com", matched.getDefaultReferrer());
+    }
+
+    @Test
+    @DisplayName("SecurityFilter: ignoreServletPolicies=true일 때 bindServlet에서 동적 정책 등록 건너뜀 검증")
+    void testBindServletIgnoredWhenIgnoreServletPoliciesTrue() {
+        com.example.security.filters.SecurityFilter filter = new com.example.security.filters.SecurityFilter();
+        ServletSecurityConfig secConfig = new ServletSecurityConfig();
+        secConfig.setIgnoreServletPolicies(true);
+
+        // SecurityFilter의 servletSecurityConfig 필드 설정
+        try {
+            java.lang.reflect.Field f = com.example.security.filters.SecurityFilter.class.getDeclaredField("servletSecurityConfig");
+            f.setAccessible(true);
+            f.set(filter, secConfig);
+        } catch (Exception e) {
+            fail("Reflection setup failed: " + e.getMessage());
+        }
+
+        javax.servlet.Servlet mockServlet = mock(javax.servlet.Servlet.class);
+        Map<String, Object> props = new HashMap<>();
+        props.put("sling.servlet.paths", "/aemapi/user/test");
+        props.put("security.allowUndefinedParams", true);
+
+        filter.bindServlet(mockServlet, props);
+
+        // 동적 정책이 등록되지 않아 null이어야 함
+        assertNull(secConfig.getDynamicPolicy("/aemapi/user/test"));
     }
 }
