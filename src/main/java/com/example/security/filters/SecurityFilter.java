@@ -127,6 +127,12 @@ public class SecurityFilter implements Filter {
                 "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10",
                 "keyword:optional:100"
         };
+
+        @AttributeDefinition(
+                name = "Ignore Servlet Specific Policies",
+                description = "If true, ignores individual servlet security.* properties and enforces the global default policy only"
+        )
+        boolean ignore_servlet_policies() default false;
     }
 
     private static final Logger LOG = LoggerFactory.getLogger(SecurityFilter.class);
@@ -431,6 +437,7 @@ public class SecurityFilter implements Filter {
                 if (!config.validator_referer_enabled()) newConfig.setValidatorEnabled("REFERER", false);
                 if (!config.validator_method_enabled())  newConfig.setValidatorEnabled("METHOD", false);
                 if (!config.validator_param_enabled())   newConfig.setValidatorEnabled("PARAM", false);
+                newConfig.setIgnoreServletPolicies(config.ignore_servlet_policies());
             }
 
             newConfig.init();
