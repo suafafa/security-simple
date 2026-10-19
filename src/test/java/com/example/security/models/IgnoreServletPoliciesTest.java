@@ -66,13 +66,13 @@ public class IgnoreServletPoliciesTest {
     }
 
     @Test
-    @DisplayName("SecurityFilter: ignoreServletPolicies=true일 때 bindServlet에서 동적 정책 등록 건너뜀 검증")
-    void testBindServletIgnoredWhenIgnoreServletPoliciesTrue() {
+    @DisplayName("SecurityFilter: bindServlet은 정상 등록되지만, ignoreServletPolicies=true 시 findMatchingPolicy에서 defaultPolicy 강제")
+    void testBindingPreservedButEvaluationEnforcesDefaultPolicy() {
         com.example.security.filters.SecurityFilter filter = new com.example.security.filters.SecurityFilter();
         ServletSecurityConfig secConfig = new ServletSecurityConfig();
+        secConfig.setDefaultPolicy(defaultPolicy);
         secConfig.setIgnoreServletPolicies(true);
 
-        // SecurityFilter의 servletSecurityConfig 필드 설정
         try {
             java.lang.reflect.Field f = com.example.security.filters.SecurityFilter.class.getDeclaredField("servletSecurityConfig");
             f.setAccessible(true);
@@ -84,11 +84,17 @@ public class IgnoreServletPoliciesTest {
         javax.servlet.Servlet mockServlet = mock(javax.servlet.Servlet.class);
         Map<String, Object> props = new HashMap<>();
         props.put("sling.servlet.paths", "/aemapi/user/test");
-        props.put("security.allowUndefinedParams", true);
+        props.put("security.defaultReferrer", "custom.com");
 
         filter.bindServlet(mockServlet, props);
 
-        // 동적 정책이 등록되지 않아 null이어야 함
-        assertNull(secConfig.getDynamicPolicy("/aemapi/user/test"));
+        // 1. 서블릿 메타데이터 및 정책은 정상 바인딩됨 (설정 토글 지원을 위해 보존)
+        assertNotNull(secConfig.getDynamicPolicy("/aemapi/user/test"));
+
+        // 2. 그러나 실제 요청 시에는 ignoreServletPolicies=true이므로 defaultPolicy만 반환됨
+        when(request.getRequestURI()).thenReturn("/aemapi/user/test");
+        ServletPolicyRule evaluated = secConfig.findMatchingPolicy(request);
+        assertEquals("DEFAULT", evaluated.getTarget());
+        assertEquals("abc.com", evaluated.getDefaultReferrer());
     }
 }

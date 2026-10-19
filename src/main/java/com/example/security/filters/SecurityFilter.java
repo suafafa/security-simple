@@ -185,7 +185,7 @@ public class SecurityFilter implements Filter {
 
         boundServlets.put(servlet, properties);
 
-        if (servletSecurityConfig != null && !servletSecurityConfig.isIgnoreServletPolicies()) {
+        if (servletSecurityConfig != null) {
             List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(properties, servletSecurityConfig.getDefaultPolicy());
             for (ServletPolicyRule rule : rules) {
                 if (matchesFilterPattern(rule.getTarget())) {
@@ -443,7 +443,7 @@ public class SecurityFilter implements Filter {
             newConfig.init();
             this.servletSecurityConfig = newConfig;
 
-            if (!newConfig.isIgnoreServletPolicies() && !boundServlets.isEmpty()) {
+            if (!boundServlets.isEmpty()) {
                 for (Map<String, Object> props : boundServlets.values()) {
                     if (isApplicableServlet(props)) {
                         List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, defaultRule);
