@@ -26,7 +26,76 @@ AEM 6.5 서블릿을 위한 **경량 보안 필터(`SecurityFilter`)** 프로젝
 
 ---
 
-## 🏛️ 2. 필터 핵심 데이터 구조 및 관계도 (Data Structures & Model)
+## 🔄 2. 필터 생명주기 및 처리 흐름 (`activate` & `doFilter`)
+
+`SecurityFilter`는 OSGi 컴포넌트로서 시스템 기동 및 설정 변경 시 실행되는 **`activate()` 단계**와, 클라이언트의 HTTP 요청을 실시간으로 가로채 검증하는 **`doFilter()` 단계**로 나뉩니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor OSGi as AEM / OSGi Container
+    actor Client as 웹 브라우저 (Client)
+    participant Filter as SecurityFilter
+    participant Config as ServletSecurityConfig
+    participant Servlet as 대상 서블릿
+    participant Chain as 3대 검증기 체인
+
+    Note over OSGi, Config: [Phase 1: 기동 및 설정 로드 (activate)]
+    OSGi->>Filter: activate(Config config)
+    Filter->>Filter: 1. filterPattern 정규식 컴파일
+    Filter->>Config: 2. defaultPolicy (기본 정책) 생성 및 등록
+    Filter->>Config: 3. 전역 검증기 토글(Referer/Method/Param) 설정
+    Filter->>Config: 4. 기존 바인딩 서블릿들과 defaultPolicy 동기화
+
+    Note over OSGi, Filter: [Phase 2: 서블릿 동적 감지 (bindServlet)]
+    OSGi->>Filter: bindServlet(servlet, properties)
+    Filter->>Config: 서블릿 property 파싱 + defaultPolicy 상속 후 동적 등록
+
+    Note over Client, Chain: [Phase 3: 실시간 요청 검증 (doFilter)]
+    Client->>Filter: doFilter(request, response)
+    Filter->>Filter: 1. Bypass 조건 검사 (enabled? pattern 일치?)
+    Filter->>Config: 2. 요청 URI/ResourceType 매칭 정책 탐색 (evaluatePoliciesAndFindActive)
+    Config-->>Filter: matchedPolicy 반환 (없으면 defaultPolicy)
+
+    Filter->>Chain: 3. 3대 검증기 순차 실행 (Referer -> Method -> Param)
+    Chain->>Chain: ① RefererPolicyValidator (도메인 검증 -> 위반 시 403)
+    Chain->>Chain: ② MethodPolicyValidator (HTTP 메서드 검증 -> 위반 시 405)
+    Chain->>Chain: ③ ParamPolicyValidator (필수/길이/SQLi/XSS -> 위반 시 400)
+
+    alt 모든 검증 통과 (PASS)
+        Chain-->>Filter: 검증 성공
+        Filter->>Servlet: chain.doFilter() 서블릿 실행
+    else 하나라도 위반 (Fail-Fast)
+        Chain-->>Filter: ValidationResult(FAIL, 에러코드)
+        Filter-->>Client: writeViolationResponse() JSON 차단 응답 즉시 반환
+    end
+```
+
+### 2-1. 기동 및 설정 로드 관점 (`activate`)
+OSGi 프레임워크가 컴포넌트를 활성화(`@Activate`)하거나 설정 변경(`@Modified`) 시 호출합니다:
+1. **필터 대상 패턴 사전 컴파일**: `config.sling_filter_pattern()`(기본값: `(/aemapi/.*|/sysapi/.*)`)을 `Pattern.compile()`로 메모리에 캐싱하여 런타임 정규식 컴파일 부하를 제거합니다. 패턴 변경 시 기존 서블릿을 재평가하여 미일치 정책을 자동 해제합니다.
+2. **전역 기본 정책(`defaultPolicy`) 생성**: `config`의 `default.*` 속성을 바탕으로 베이스라인 `ServletPolicyRule`을 생성합니다 (기본 도메인 `abc.com`, 메서드 `GET, POST`, SQLi/XSS 자동 차단, 공통 파라미터 `page, size, sort, keyword` 등).
+3. **검증기 온/오프 토글 반영**: `config.validator_*_enabled()` 플래그를 읽어 필요 시 전역 수준에서 특정 검증기를 On/Off합니다.
+4. **바인딩된 서블릿들과의 동기화**: 필터보다 먼저 등록되어 대기 중이던 서블릿(`boundServlets`)이 있다면, 새로 로드된 `defaultPolicy`를 즉시 상속시켜 보안 정책을 갱신합니다.
+
+### 2-2. 요청 가로채기 및 검증 관점 (`doFilter`)
+클라이언트로부터 실제 HTTP 요청이 들어왔을 때 필터 체인에서 매번 실행됩니다:
+1. **1차 필터링 및 건너뛰기 (Bypass)**:
+   - 필터 전역 비활성(`enabled=false`), 비 HTTP 요청, 또는 URI가 `sling.filter.pattern`과 매칭되지 않는 경우 보안 검사를 수행하지 않고 즉시 `chain.doFilter`로 통과시킵니다.
+2. **대상 정책 조회 및 판정 (`evaluatePoliciesAndFindActive`)**:
+   - `servletSecurityConfig.findMatchingPolicy(request)`를 통해 URI 및 Sling ResourceType과 일치하는 서블릿 정책을 조회합니다. 개별 정책이 없으면 `defaultPolicy`가 적용됩니다.
+   - 해당 정책이 비활성화(`enabled=false`)되어 있으면 보안 검사를 생략하고 통과합니다.
+3. **3대 검증기 순차 실행 (Fail-Fast 체인)**:
+   - **① `RefererPolicyValidator`**: 신뢰 도메인 확인 (`403 Forbidden` / `SEC-40301`)
+   - **② `MethodPolicyValidator`**: 허용 HTTP Method 확인 (`405 Method Not Allowed` / `SEC-40501`)
+   - **③ `ParamPolicyValidator`**: 필수값, 미정의 파라미터, 길이, 정규식, SQLi, XSS, Path Traversal 검증 (`400 Bad Request` / `SEC-40001` ~ `SEC-40009`)
+4. **결과 처리**:
+   - **통과 시**: `chain.doFilter(request, response)`를 호출하여 대상 서블릿 비즈니스 로직을 정상 실행합니다.
+   - **위반 시**: 서블릿 실행을 즉각 중단하고, `writeViolationResponse`를 통해 규격화된 에러 JSON과 HTTP 상태 코드를 클라이언트에 즉시 응답합니다.
+
+---
+
+## 🏛️ 3. 필터 핵심 데이터 구조 및 관계도 (Data Structures & Model)
 
 필터는 객체 간 명확한 계층 분리와 런타임 O(1) 고속 조회를 위해 체계적인 데이터 모델 구조를 가집니다:
 
@@ -143,7 +212,7 @@ classDiagram
 
 ---
 
-## ⚙️ 3. 전역 OSGi 설정 (`config/com.example.security.filters.SecurityFilter.config`)
+## ⚙️ 4. 전역 OSGi 설정 (`config/com.example.security.filters.SecurityFilter.config`)
 
 ```ini
 enabled=B"true"
@@ -171,7 +240,7 @@ default.params=[ \
 
 ---
 
-## 🧩 4. 서블릿 파라미터(`security.params`) 설정 가이드 — 케이스별 상세 예제
+## 🧩 5. 서블릿 파라미터(`security.params`) 설정 가이드 — 케이스별 상세 예제
 
 서블릿 클래스 상단의 `@Component(property = { ... })` 안에서 콜론(`:`) 구분자 기반의 간편 DSL 문법(`"파라미터명:필수여부:타입또는패턴:길이"`)으로 모든 파라미터 검증 규칙을 선언할 수 있습니다.  
 토큰 순서는 첫 번째 `파라미터명`만 고정이며, 나머지 토큰(`required`, `타입`, `길이`)은 순서에 관계없이 자유롭게 조합할 수 있습니다.
@@ -375,7 +444,7 @@ property = {
 
 ---
 
-## 🚨 5. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
+## 🚨 6. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
 
 요청이 필터에 의해 차단되면 **어떤 설정 규칙과 입력값 때문에 막혔는지(`BlockedByConfig`)**와 **해당 서블릿에 적용된 전체 보안 설정(`AppliedServletPolicy`)**이 동시에 출력됩니다:
 
