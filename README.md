@@ -237,7 +237,7 @@ default.params=[ \
   "keyword:optional:100" \
 ]
 # 개별 서블릿의 security.* 설정을 무시하고 글로벌 defaultPolicy만 강제 적용할지 여부 (기본값: false)
-ignore_servlet_policies=B"false"
+default.ignoreServletPolicies=B"false"
 ```
 
 ---
