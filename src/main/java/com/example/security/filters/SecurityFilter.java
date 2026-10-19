@@ -449,7 +449,6 @@ public class SecurityFilter implements Filter {
                 }
             }
 
-            logConfiguredPolicies();
             LOG.info("SecurityFilter activated for AEM 6.5. Filter Enabled: {}, Filter Pattern: {}, Active Policies: {}",
                     enabled, filterPattern, servletSecurityConfig.getPolicies().size());
         } catch (Exception e) {
@@ -658,39 +657,7 @@ public class SecurityFilter implements Filter {
         }
     }
 
-    /**
-     * 현재 활성화된 기본 보안 정책(Default Policy)과 개별 서블릿 정책 목록을 INFO 로그로 출력합니다.
-     */
-    private void logConfiguredPolicies() {
-        if (servletSecurityConfig == null) {
-            LOG.info("No Servlet Policies configured.");
-            return;
-        }
 
-        LOG.info("=== Servlet Security Policies (Enabled: {}) ===", servletSecurityConfig.isEnabled());
-
-        if (servletSecurityConfig.getDefaultPolicy() != null) {
-            ServletPolicyRule def = servletSecurityConfig.getDefaultPolicy();
-            LOG.info("Default Policy (Fallback): Enabled: [{}], Methods: {}, DefaultReferrer: [{}], AllowUndefinedParams: [{}], Params: {}",
-                    def.isEnabled(),
-                    def.getMethods().isEmpty() ? "ALL" : def.getMethods(),
-                    servletSecurityConfig.getDefaultReferrer(),
-                    def.isAllowUndefinedParams(),
-                    def.getParams().keySet());
-        }
-
-        if (servletSecurityConfig.getPolicies() != null) {
-            for (ServletPolicyRule policy : servletSecurityConfig.getPolicies()) {
-                LOG.info("Policy Target: [{}], Enabled: [{}], Methods: {}, AllowedReferrers: {}, AllowUndefinedParams: [{}], Params: {}",
-                        policy.getTarget(),
-                        policy.isEnabled(),
-                        policy.getMethods().isEmpty() ? "ALL" : policy.getMethods(),
-                        policy.getAllowedReferrers(),
-                        policy.isAllowUndefinedParams(),
-                        policy.getParams().keySet());
-            }
-        }
-    }
 
     /**
      * 서블릿 필터 종료 시 호출되는 메소드입니다.
