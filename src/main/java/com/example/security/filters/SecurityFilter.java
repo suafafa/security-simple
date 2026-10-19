@@ -10,11 +10,6 @@ import com.example.security.validators.PolicyValidator;
 import com.example.security.validators.RefererPolicyValidator;
 import com.example.security.validators.ValidationResult;
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import org.apache.commons.lang3.StringUtils;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -406,618 +401,101 @@ public class SecurityFilter implements Filter {
 
     /**
      * OSGi 컴포넌트 활성화({@code @Activate}) 및 설정 변경({@code @Modified}) 시 호출됩니다.
-     * OSGi {@code .config} 설정 또는 프로퍼티 맵으로부터 기본 보안 정책과 검증기 활성화 상태를 로드하고,
+     * OSGi {@link Config} 객체로부터 기본 보안 정책과 검증기 활성화 상태를 로드하고,
      * 바인딩된 서블릿들의 동적 정책을 동기화합니다.
      *
-     * @param config     OSGi OCD 설정 객체
-     * @param properties OSGi 컴포넌트 프로퍼티 맵
+     * @param config OSGi OCD 설정 객체
      */
     @Activate
     @Modified
-    public void activate(final Config config, final Map<String, Object> properties) {
+    public void activate(final Config config) {
         LOG.debug("SecurityFilter activate/modified lifecycle invoked.");
 
-        String configuredPattern = null;
         if (config != null && StringUtils.isNotBlank(config.sling_filter_pattern())) {
-            configuredPattern = config.sling_filter_pattern();
-        }
-        if (properties != null) {
-            Object patternProp = properties.get("sling.filter.pattern");
-            if (patternProp instanceof String && StringUtils.isNotBlank((String) patternProp)) {
-                configuredPattern = (String) patternProp;
-            }
-        }
-        if (StringUtils.isNotBlank(configuredPattern)) {
-            updateFilterPattern(configuredPattern);
+            updateFilterPattern(config.sling_filter_pattern());
         }
 
         boolean isEnabled = config != null ? config.enabled() : true;
-
-        if (properties != null && properties.containsKey("enabled")) {
-            Object enObj = properties.get("enabled");
-            if (enObj instanceof Boolean) {
-                isEnabled = (Boolean) enObj;
-            } else if (enObj instanceof String) {
-                isEnabled = Boolean.parseBoolean((String) enObj);
-            }
-        }
-
-        if (config != null || hasOsgiDotConfigProperties(properties)) {
-            LOG.debug("Loading SecurityFilter policies from OSGi .config attributes (isEnabled={}).", isEnabled);
-            loadFromOsgiConfig(isEnabled, config, properties);
-        } else if (properties != null) {
-            LOG.debug("Loading SecurityFilter policies from OSGi map/JSON properties (isEnabled={}).", isEnabled);
-            parsePoliciesFromProperties(isEnabled, properties);
-        }
-
-        applyOsgiValidatorToggles(config, properties);
-
-        // 새로 로드된 defaultPolicy와 동적으로 바인딩된 모든 서블릿을 동기화 (바인딩 루프에서는 로그 생략)
-        if (servletSecurityConfig != null && !boundServlets.isEmpty()) {
-            for (Map<String, Object> props : boundServlets.values()) {
-                if (isApplicableServlet(props)) {
-                    List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, servletSecurityConfig.getDefaultPolicy());
-                    for (ServletPolicyRule rule : rules) {
-                        if (matchesFilterPattern(rule.getTarget())) {
-                            servletSecurityConfig.registerDynamicPolicy(rule);
-                        }
-                    }
-                }
-            }
-        }
-
         this.enabled = isEnabled;
-        logConfiguredPolicies();
 
-        LOG.info("SecurityFilter activated for AEM 6.5. Filter Enabled: {}, Filter Pattern: {}, Active Policies: {}",
-                enabled, filterPattern, servletSecurityConfig != null ? servletSecurityConfig.getPolicies().size() : 0);
-    }
-
-    /**
-     * 프로퍼티 맵에 OSGi {@code .config} 형식의 {@code default.*} 속성이 포함되어 있는지 확인합니다.
-     *
-     * @param properties OSGi 프로퍼티 맵
-     * @return {@code default.*} 키가 하나라도 존재하면 true
-     */
-    private boolean hasOsgiDotConfigProperties(final Map<String, Object> properties) {
-        if (properties == null || properties.isEmpty()) {
-            return false;
-        }
-        for (String key : properties.keySet()) {
-            if (key != null && key.startsWith("default.")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 순수 OSGi {@code .config} 속성({@code default.*} 및 {@code validator.*.enabled})으로부터
-     * 직접 {@link ServletSecurityConfig} 및 {@code defaultPolicy}를 생성합니다.
-     *
-     * @param isEnabled  필터 전체 활성화 여부
-     * @param config     OSGi OCD 설정 객체
-     * @param properties OSGi 프로퍼티 맵
-     */
-    private void loadFromOsgiConfig(final boolean isEnabled, final Config config, final Map<String, Object> properties) {
         try {
-            Map<String, Object> props = properties != null ? properties : Collections.emptyMap();
-            ServletPolicyRule defaultRule = buildDefaultPolicyFromOsgiConfig(config, props);
+            ServletPolicyRule defaultRule = buildDefaultPolicy(config);
 
-            List<ServletPolicyRule> policies = Collections.emptyList();
-            if (props.containsKey("policies")) {
-                policies = parsePolicyRuleList(props.get("policies"));
-            }
-
-            ServletSecurityConfig newConfig = new ServletSecurityConfig(isEnabled, policies);
+            ServletSecurityConfig newConfig = new ServletSecurityConfig(isEnabled, Collections.emptyList());
             newConfig.setDefaultPolicy(defaultRule);
             if (StringUtils.isNotBlank(defaultRule.getDefaultReferrer())) {
                 newConfig.setDefaultReferrer(defaultRule.getDefaultReferrer());
             }
+
+            if (config != null) {
+                if (!config.validator_referer_enabled()) newConfig.setValidatorEnabled("REFERER", false);
+                if (!config.validator_method_enabled())  newConfig.setValidatorEnabled("METHOD", false);
+                if (!config.validator_param_enabled())   newConfig.setValidatorEnabled("PARAM", false);
+            }
+
             newConfig.init();
             this.servletSecurityConfig = newConfig;
-            LOG.debug("Initialized ServletSecurityConfig from OSGi .config: defaultPolicy=[{}], explicitPoliciesCount={}",
-                    defaultRule.toPolicySummaryString(), policies.size());
-            LOG.info("Successfully loaded configuration from OSGi .config (defaultPolicy enabled={}, methods={}, defaultReferrer={}, params={})",
-                    defaultRule.isEnabled(), defaultRule.getMethods(), defaultRule.getDefaultReferrer(), defaultRule.getParams().keySet());
+
+            if (!boundServlets.isEmpty()) {
+                for (Map<String, Object> props : boundServlets.values()) {
+                    if (isApplicableServlet(props)) {
+                        List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, defaultRule);
+                        for (ServletPolicyRule rule : rules) {
+                            if (matchesFilterPattern(rule.getTarget())) {
+                                servletSecurityConfig.registerDynamicPolicy(rule);
+                            }
+                        }
+                    }
+                }
+            }
+
+            logConfiguredPolicies();
+            LOG.info("SecurityFilter activated for AEM 6.5. Filter Enabled: {}, Filter Pattern: {}, Active Policies: {}",
+                    enabled, filterPattern, servletSecurityConfig.getPolicies().size());
         } catch (Exception e) {
-            handleConfigFailure("OSGi .config", e, isEnabled);
+            handleConfigFailure("OSGi Config", e, isEnabled);
         }
     }
 
     /**
-     * OSGi {@link Config} 및 프로퍼티 맵에서 {@code default.*} 설정을 읽어 기본 보안 정책({@code defaultPolicy})을 생성합니다.
+     * OSGi {@link Config} 객체에서 {@code default.*} 설정을 읽어 기본 보안 정책({@code defaultPolicy})을 생성합니다.
      *
      * @param config OSGi OCD 설정 객체
-     * @param props  OSGi 프로퍼티 맵
      * @return 초기화된 기본 {@link ServletPolicyRule} 객체
      */
-    private ServletPolicyRule buildDefaultPolicyFromOsgiConfig(final Config config, final Map<String, Object> props) {
+    private ServletPolicyRule buildDefaultPolicy(final Config config) {
         ServletPolicyRule rule = new ServletPolicyRule();
         rule.setTarget("DEFAULT");
 
-        boolean defEnabled = config != null ? config.default_enabled() : true;
-        if (props.containsKey("default.enabled")) {
-            defEnabled = toBoolean(props.get("default.enabled"), defEnabled);
-        }
-        rule.setEnabled(defEnabled);
+        if (config != null) {
+            rule.setEnabled(config.default_enabled());
+            rule.setDefaultReferrer(config.default_referrer());
+            if (config.default_methods() != null && config.default_methods().length > 0) {
+                rule.setMethods(Arrays.asList(config.default_methods()));
+            }
+            rule.setBlockSqlInjection(config.default_blockSqlInjection());
+            rule.setBlockXss(config.default_blockXss());
+            rule.setAllowUndefinedParams(config.default_allowUndefinedParams());
 
-        String defReferrer = getStringProp(props, "default.referrer",
-                config != null ? config.default_referrer() : "abc.com");
-        rule.setDefaultReferrer(defReferrer);
-
-        List<String> defMethods = getStringListProp(props, "default.methods",
-                config != null ? config.default_methods() : new String[]{"GET", "POST"});
-        if (!defMethods.isEmpty()) {
-            rule.setMethods(defMethods);
-        }
-
-        boolean defBlockSql = config != null ? config.default_blockSqlInjection() : true;
-        if (props.containsKey("default.blockSqlInjection")) {
-            defBlockSql = toBoolean(props.get("default.blockSqlInjection"), defBlockSql);
-        }
-        rule.setBlockSqlInjection(defBlockSql);
-
-        boolean defBlockXss = config != null ? config.default_blockXss() : true;
-        if (props.containsKey("default.blockXss")) {
-            defBlockXss = toBoolean(props.get("default.blockXss"), defBlockXss);
-        }
-        rule.setBlockXss(defBlockXss);
-
-        boolean defAllowUndefParams = config != null ? config.default_allowUndefinedParams() : false;
-        if (props.containsKey("default.allowUndefinedParams")) {
-            defAllowUndefParams = toBoolean(props.get("default.allowUndefinedParams"), defAllowUndefParams);
-        }
-        rule.setAllowUndefinedParams(defAllowUndefParams);
-
-        List<String> defParams = getStringListProp(props, "default.params",
-                config != null ? config.default_params() : new String[]{
-                        "page:optional:digits:5",
-                        "size:optional:digits:4",
-                        "sort:optional:alnum:30",
-                        "order:optional:asc|desc:4",
-                        "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10",
-                        "keyword:optional:100"
-                });
-        Map<String, ParamRule> paramRules = new LinkedHashMap<>();
-        for (String spec : defParams) {
-            if (StringUtils.isNotBlank(spec)) {
-                Map.Entry<String, ParamRule> entry = ServletPolicyRule.parseSimpleParamSpec(spec);
-                if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
-                    paramRules.put(entry.getKey().toLowerCase(), entry.getValue());
+            String[] paramsArray = config.default_params();
+            if (paramsArray != null && paramsArray.length > 0) {
+                Map<String, ParamRule> paramRules = new LinkedHashMap<>();
+                for (String spec : paramsArray) {
+                    if (StringUtils.isNotBlank(spec)) {
+                        Map.Entry<String, ParamRule> entry = ServletPolicyRule.parseSimpleParamSpec(spec);
+                        if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
+                            paramRules.put(entry.getKey().toLowerCase(), entry.getValue());
+                        }
+                    }
+                }
+                if (!paramRules.isEmpty()) {
+                    rule.setParams(paramRules);
                 }
             }
-        }
-        if (!paramRules.isEmpty()) {
-            rule.setParams(paramRules);
         }
 
         rule.init();
         return rule;
-    }
-
-    /**
-     * OSGi 프로퍼티 값(Boolean 또는 {@code B"true"} 형식 문자열 포함)을 boolean 타입으로 변환합니다.
-     *
-     * @param val        변환할 프로퍼티 값
-     * @param defaultVal 변환 실패 시 반환할 기본값
-     * @return 변환된 boolean 값
-     */
-    private boolean toBoolean(final Object val, final boolean defaultVal) {
-        if (val instanceof Boolean) {
-            return (Boolean) val;
-        }
-        if (val instanceof String) {
-            String s = ((String) val).trim();
-            if (s.startsWith("B\"") && s.endsWith("\"")) {
-                s = s.substring(2, s.length() - 1);
-            }
-            return Boolean.parseBoolean(s);
-        }
-        return defaultVal;
-    }
-
-    /**
-     * 프로퍼티 맵에서 문자열 값을 추출하고 양끝 따옴표가 있으면 제거하여 반환합니다.
-     *
-     * @param props      프로퍼티 맵
-     * @param key        조회할 프로퍼티 키
-     * @param defaultVal 키가 없을 때 반환할 기본값
-     * @return 추출된 문자열
-     */
-    private String getStringProp(final Map<String, Object> props, final String key, final String defaultVal) {
-        if (props != null && props.containsKey(key) && props.get(key) != null) {
-            String s = props.get(key).toString().trim();
-            if (s.startsWith("\"") && s.endsWith("\"") && s.length() >= 2) {
-                s = s.substring(1, s.length() - 1);
-            }
-            return s;
-        }
-        return defaultVal;
-    }
-
-    /**
-     * 프로퍼티 맵에서 문자열 배열/컬렉션/쉼표 구분 문자열을 추출하여 리스트로 반환합니다.
-     *
-     * @param props      프로퍼티 맵
-     * @param key        조회할 프로퍼티 키
-     * @param defaultVal 키가 없을 때 사용할 기본 문자열 배열
-     * @return 추출된 문자열 리스트
-     */
-    private List<String> getStringListProp(final Map<String, Object> props, final String key, final String[] defaultVal) {
-        List<String> list = new ArrayList<>();
-        if (props != null && props.containsKey(key) && props.get(key) != null) {
-            Object v = props.get(key);
-            if (v instanceof String[]) {
-                for (String s : (String[]) v) {
-                    if (StringUtils.isNotBlank(s)) {
-                        list.add(s.trim());
-                    }
-                }
-                return list;
-            } else if (v instanceof Collection<?>) {
-                for (Object item : (Collection<?>) v) {
-                    if (item != null && StringUtils.isNotBlank(item.toString())) {
-                        list.add(item.toString().trim());
-                    }
-                }
-                return list;
-            } else if (v instanceof String) {
-                String s = ((String) v).trim();
-                if (StringUtils.isNotBlank(s)) {
-                    for (String part : s.split(",")) {
-                        if (StringUtils.isNotBlank(part)) {
-                            list.add(part.trim());
-                        }
-                    }
-                }
-                return list;
-            }
-        }
-        if (defaultVal != null) {
-            for (String s : defaultVal) {
-                if (StringUtils.isNotBlank(s)) {
-                    list.add(s.trim());
-                }
-            }
-        }
-        return list;
-    }
-
-    /**
-     * JSON/Map 형태의 OSGi 프로퍼티 맵으로부터 {@link ServletSecurityConfig} 정책 목록을 파싱하여 초기화합니다.
-     *
-     * @param isEnabled  필터 전체 활성화 여부
-     * @param properties OSGi 컴포넌트 프로퍼티 맵
-     */
-    private void parsePoliciesFromProperties(final boolean isEnabled, final Map<String, Object> properties) {
-        try {
-            ServletSecurityConfig parsedConfig = null;
-            JsonElement rootElement = toNormalizedJsonElement(properties);
-            if (rootElement != null && rootElement.isJsonObject()) {
-                JsonObject rootObj = rootElement.getAsJsonObject();
-                sanitizeRootConfigJsonObject(rootObj);
-                try {
-                    ServletSecurityConfig cfg = GSON.fromJson(rootObj, ServletSecurityConfig.class);
-                    if (cfg != null && ((cfg.getPolicies() != null && !cfg.getPolicies().isEmpty()) || cfg.getDefaultPolicy() != null)) {
-                        cfg.setEnabled(isEnabled);
-                        parsedConfig = cfg;
-                    }
-                } catch (Exception e) {
-                    LOG.debug("Direct root config deserialization fallback triggered: {}", e.getMessage());
-                }
-            }
-
-            if (parsedConfig == null) {
-                Object policiesObj = properties.get("policies");
-                List<ServletPolicyRule> policies = parsePolicyRuleList(policiesObj);
-                if (policies != null && !policies.isEmpty()) {
-                    parsedConfig = new ServletSecurityConfig(isEnabled, policies);
-                } else if (policiesObj != null || properties.containsKey("defaultPolicy")
-                        || properties.containsKey("default") || properties.containsKey("globalPolicy")) {
-                    parsedConfig = new ServletSecurityConfig(isEnabled, Collections.emptyList());
-                }
-            }
-
-            Object defPolicyObj = properties.get("defaultPolicy");
-            if (defPolicyObj == null) {
-                defPolicyObj = properties.get("default");
-            }
-            if (defPolicyObj == null) {
-                defPolicyObj = properties.get("globalPolicy");
-            }
-            if (defPolicyObj != null && parsedConfig != null && parsedConfig.getDefaultPolicy() == null) {
-                ServletPolicyRule defRule = parseSinglePolicyRule(defPolicyObj);
-                if (defRule != null) {
-                    parsedConfig.setDefaultPolicy(defRule);
-                }
-            }
-
-            Object validatorsObj = properties.get("validators");
-            if (validatorsObj != null && parsedConfig != null) {
-                JsonElement valElem = toNormalizedJsonElement(validatorsObj);
-                if (valElem != null && valElem.isJsonObject()) {
-                    for (Map.Entry<String, JsonElement> entry : valElem.getAsJsonObject().entrySet()) {
-                        try {
-                            parsedConfig.setValidatorEnabled(entry.getKey(), entry.getValue().getAsBoolean());
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }
-            }
-
-            if (parsedConfig != null) {
-                parsedConfig.init();
-                this.servletSecurityConfig = parsedConfig;
-                LOG.info("Successfully loaded and initialized {} servlet security policies from OSGi properties.",
-                        parsedConfig.getPolicies() != null ? parsedConfig.getPolicies().size() : 0);
-            } else {
-                handleConfigFailure("OSGi properties", new IllegalArgumentException("Parsed configuration resulted in null"), isEnabled);
-            }
-        } catch (Exception e) {
-            handleConfigFailure("OSGi properties", e, isEnabled);
-        }
-    }
-
-    /**
-     * Gson 역직렬화 전에 루트 JSON 객체의 필드 타입(단일 객체 vs 배열 등)을 정규화합니다.
-     *
-     * @param rootObj 정규화할 루트 {@link JsonObject}
-     */
-    private void sanitizeRootConfigJsonObject(final JsonObject rootObj) {
-        String[] objectKeys = {"defaultPolicy", "default", "globalPolicy"};
-        for (String key : objectKeys) {
-            if (rootObj.has(key)) {
-                JsonElement el = rootObj.get(key);
-                if (el != null && el.isJsonArray() && el.getAsJsonArray().size() == 1 && el.getAsJsonArray().get(0).isJsonObject()) {
-                    rootObj.add(key, el.getAsJsonArray().get(0));
-                } else if (el == null || !el.isJsonObject()) {
-                    rootObj.remove(key);
-                }
-            }
-        }
-        if (rootObj.has("policies")) {
-            JsonElement el = rootObj.get("policies");
-            if (el != null && el.isJsonObject()) {
-                JsonArray arr = new JsonArray();
-                arr.add(el);
-                rootObj.add("policies", arr);
-            } else if (el == null || !el.isJsonArray()) {
-                rootObj.remove("policies");
-            }
-        }
-        String[] arrayKeys = {"disabledValidators", "skipValidators", "enabledValidators"};
-        for (String key : arrayKeys) {
-            if (rootObj.has(key)) {
-                JsonElement el = rootObj.get(key);
-                if (el != null && el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
-                    String str = el.getAsString().trim();
-                    JsonArray arr = new JsonArray();
-                    if (!str.isEmpty()) {
-                        for (String part : str.split(",")) {
-                            if (StringUtils.isNotBlank(part)) {
-                                arr.add(new JsonPrimitive(part.trim()));
-                            }
-                        }
-                    }
-                    rootObj.add(key, arr);
-                } else if (el == null || !el.isJsonArray()) {
-                    rootObj.remove(key);
-                }
-            }
-        }
-    }
-
-    /**
-     * 단일 정책 객체를 파싱하여 {@link ServletPolicyRule}로 변환합니다.
-     *
-     * @param obj 파싱할 원본 객체(JSON 문자열, Map, JsonElement 등)
-     * @return 변환된 {@link ServletPolicyRule} (변환 불가 시 null)
-     */
-    private ServletPolicyRule parseSinglePolicyRule(final Object obj) {
-        if (obj == null) {
-            return null;
-        }
-        JsonElement elem = toNormalizedJsonElement(obj);
-        if (elem == null || elem.isJsonNull()) {
-            return null;
-        }
-        if (elem.isJsonArray() && elem.getAsJsonArray().size() == 1) {
-            elem = elem.getAsJsonArray().get(0);
-        }
-        if (elem.isJsonObject()) {
-            return GSON.fromJson(elem, ServletPolicyRule.class);
-        }
-        return null;
-    }
-
-    /**
-     * 정책 목록 객체(JSON 배열, 문자열 배열, Map 등)를 파싱하여 {@link ServletPolicyRule} 리스트로 변환합니다.
-     *
-     * @param policiesObj 파싱할 정책 목록 객체
-     * @return 변환된 {@link ServletPolicyRule} 리스트
-     */
-    private List<ServletPolicyRule> parsePolicyRuleList(final Object policiesObj) {
-        if (policiesObj == null) {
-            return Collections.emptyList();
-        }
-        JsonElement elem = toNormalizedJsonElement(policiesObj);
-        if (elem == null || elem.isJsonNull()) {
-            return Collections.emptyList();
-        }
-        List<ServletPolicyRule> result = new ArrayList<>();
-        if (elem.isJsonArray()) {
-            for (JsonElement item : elem.getAsJsonArray()) {
-                JsonElement normalizedItem = item.isJsonPrimitive() && item.getAsJsonPrimitive().isString()
-                        ? toNormalizedJsonElement(item.getAsString())
-                        : item;
-                if (normalizedItem != null && normalizedItem.isJsonObject()) {
-                    ServletPolicyRule rule = GSON.fromJson(normalizedItem, ServletPolicyRule.class);
-                    if (rule != null) {
-                        result.add(rule);
-                    }
-                }
-            }
-        } else if (elem.isJsonObject()) {
-            ServletPolicyRule singleRule = GSON.fromJson(elem, ServletPolicyRule.class);
-            if (singleRule != null) {
-                result.add(singleRule);
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 임의의 Java 객체(Map, 배열, 컬렉션, JSON 문자열 등)를 재귀적으로 정규화된 {@link JsonElement}로 변환합니다.
-     *
-     * @param value 변환할 원본 값
-     * @return 정규화된 {@link JsonElement}
-     */
-    private JsonElement toNormalizedJsonElement(final Object value) {
-        if (value == null) {
-            return JsonNull.INSTANCE;
-        }
-        if (value instanceof JsonElement) {
-            JsonElement el = (JsonElement) value;
-            if (el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
-                return parseJsonStringIfApplicable(el.getAsString());
-            } else if (el.isJsonArray()) {
-                JsonArray normalizedArr = new JsonArray();
-                for (JsonElement child : el.getAsJsonArray()) {
-                    normalizedArr.add(toNormalizedJsonElement(child));
-                }
-                return normalizedArr;
-            } else if (el.isJsonObject()) {
-                JsonObject normalizedObj = new JsonObject();
-                for (Map.Entry<String, JsonElement> entry : el.getAsJsonObject().entrySet()) {
-                    normalizedObj.add(entry.getKey(), toNormalizedJsonElement(entry.getValue()));
-                }
-                return normalizedObj;
-            }
-            return el;
-        }
-        if (value instanceof Boolean) {
-            return new JsonPrimitive((Boolean) value);
-        }
-        if (value instanceof Number) {
-            return new JsonPrimitive((Number) value);
-        }
-        if (value instanceof Character) {
-            return new JsonPrimitive((Character) value);
-        }
-        if (value instanceof String) {
-            return parseJsonStringIfApplicable((String) value);
-        }
-        if (value instanceof String[]) {
-            String[] arr = (String[]) value;
-            if (arr.length == 0) {
-                return new JsonArray();
-            }
-            if (arr.length == 1) {
-                JsonElement single = parseJsonStringIfApplicable(arr[0]);
-                if (single.isJsonArray() || single.isJsonObject()) {
-                    return single;
-                }
-                JsonArray jsonArray = new JsonArray();
-                jsonArray.add(single);
-                return jsonArray;
-            }
-            boolean allElementsAreObjects = true;
-            for (String s : arr) {
-                if (StringUtils.isNotBlank(s)) {
-                    String trimmed = s.trim();
-                    if (!(trimmed.startsWith("{") && trimmed.endsWith("}"))) {
-                        allElementsAreObjects = false;
-                        break;
-                    }
-                }
-            }
-            if (!allElementsAreObjects) {
-                String joined = String.join("\n", arr).trim();
-                if ((joined.startsWith("[") && joined.endsWith("]")) || (joined.startsWith("{") && joined.endsWith("}"))) {
-                    try {
-                        JsonElement parsedJoined = GSON.fromJson(joined, JsonElement.class);
-                        if (parsedJoined != null && (parsedJoined.isJsonArray() || parsedJoined.isJsonObject())) {
-                            return toNormalizedJsonElement(parsedJoined);
-                        }
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-            JsonArray jsonArray = new JsonArray();
-            for (String s : arr) {
-                if (s != null) {
-                    jsonArray.add(parseJsonStringIfApplicable(s));
-                }
-            }
-            return jsonArray;
-        }
-        if (value instanceof Map<?, ?>) {
-            JsonObject jsonObject = new JsonObject();
-            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null) {
-                    jsonObject.add(String.valueOf(entry.getKey()), toNormalizedJsonElement(entry.getValue()));
-                }
-            }
-            return jsonObject;
-        }
-        if (value instanceof Collection<?>) {
-            Collection<?> col = (Collection<?>) value;
-            boolean allStrings = !col.isEmpty();
-            for (Object item : col) {
-                if (!(item instanceof String)) {
-                    allStrings = false;
-                    break;
-                }
-            }
-            if (allStrings) {
-                return toNormalizedJsonElement(col.toArray(new String[0]));
-            }
-            JsonArray jsonArray = new JsonArray();
-            for (Object item : col) {
-                if (item != null) {
-                    jsonArray.add(toNormalizedJsonElement(item));
-                }
-            }
-            return jsonArray;
-        }
-        if (value.getClass().isArray()) {
-            int length = java.lang.reflect.Array.getLength(value);
-            JsonArray jsonArray = new JsonArray();
-            for (int i = 0; i < length; i++) {
-                Object item = java.lang.reflect.Array.get(value, i);
-                if (item != null) {
-                    jsonArray.add(toNormalizedJsonElement(item));
-                }
-            }
-            return jsonArray;
-        }
-        return GSON.toJsonTree(value);
-    }
-
-    /**
-     * 문자열이 JSON 객체({@code {...}}) 또는 JSON 배열({@code [...]}) 형태인 경우 파싱하고,
-     * 일반 문자열이면 {@link JsonPrimitive}로 감싸서 반환합니다.
-     *
-     * @param raw 검사할 문자열
-     * @return 파싱된 {@link JsonElement}
-     */
-    private JsonElement parseJsonStringIfApplicable(final String raw) {
-        if (raw == null) {
-            return JsonNull.INSTANCE;
-        }
-        String trimmed = raw.trim();
-        if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
-                || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-            try {
-                JsonElement parsed = GSON.fromJson(trimmed, JsonElement.class);
-                if (parsed != null && (parsed.isJsonObject() || parsed.isJsonArray())) {
-                    return toNormalizedJsonElement(parsed);
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return new JsonPrimitive(raw);
     }
 
     /**
@@ -1316,48 +794,6 @@ public class SecurityFilter implements Filter {
             }
         }
         return "ConfiguredPolicy";
-    }
-
-    /**
-     * OSGi 설정({@link Config} 및 프로퍼티 맵)의 전역 검증기 On/Off 토글
-     * ({@code validator.referer.enabled}, {@code validator.method.enabled}, {@code validator.param.enabled})을
-     * {@link ServletSecurityConfig}에 반영합니다.
-     *
-     * @param config     OSGi OCD 설정 객체
-     * @param properties OSGi 프로퍼티 맵
-     */
-    private void applyOsgiValidatorToggles(final Config config, final Map<String, Object> properties) {
-        if (servletSecurityConfig == null) {
-            return;
-        }
-        if (config != null) {
-            if (!config.validator_referer_enabled()) servletSecurityConfig.setValidatorEnabled("REFERER", false);
-            if (!config.validator_method_enabled()) servletSecurityConfig.setValidatorEnabled("METHOD", false);
-            if (!config.validator_param_enabled()) servletSecurityConfig.setValidatorEnabled("PARAM", false);
-        }
-        if (properties != null) {
-            applyPropertyValidatorToggle(properties, "validator.referer.enabled", "REFERER");
-            applyPropertyValidatorToggle(properties, "validator.method.enabled", "METHOD");
-            applyPropertyValidatorToggle(properties, "validator.param.enabled", "PARAM");
-        }
-    }
-
-    /**
-     * 개별 검증기 토글 프로퍼티 키를 확인하여 {@link ServletSecurityConfig}에 활성화 여부를 설정합니다.
-     *
-     * @param properties    OSGi 프로퍼티 맵
-     * @param key           프로퍼티 키 (예: "validator.referer.enabled")
-     * @param validatorName 검증기 이름 (예: "REFERER")
-     */
-    private void applyPropertyValidatorToggle(final Map<String, Object> properties, final String key, final String validatorName) {
-        if (properties.containsKey(key)) {
-            Object val = properties.get(key);
-            if (val instanceof Boolean) {
-                servletSecurityConfig.setValidatorEnabled(validatorName, (Boolean) val);
-            } else if (val instanceof String) {
-                servletSecurityConfig.setValidatorEnabled(validatorName, toBoolean(val, true));
-            }
-        }
     }
 
     /**

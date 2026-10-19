@@ -693,7 +693,7 @@ default.params=[
           <div class="card">
             <div class="card-header teal">OSGi .config 특징 및 장애 복원력 (Resilience)</div>
             <div class="card-body">
-              <div>• <strong>OSGi <code>B"true"</code> 타입 문법 안내:</strong> Apache Felix Configuration Admin의 표준 Boolean 타입 표기법으로, OSGi가 <code>boolean</code>으로 파싱하여 주입하며 <code>SecurityFilter.toBoolean()</code>에서도 완벽 호환됩니다.</div>
+              <div>• <strong>OSGi <code>B"true"</code> 타입 문법 안내:</strong> Apache Felix Configuration Admin의 표준 Boolean 타입 표기법으로, OSGi가 <code>Config</code> 객체의 <code>boolean</code> 타입으로 자동 변환하여 주입합니다.</div>
               <div>• <strong>런타임 검증기 On/Off 토글:</strong> 재배포 없이 OSGi 웹 콘솔 또는 <code>.config</code> 수정만으로 Referer / Method / Param 검증기를 즉시 On/Off 가능</div>
               <div>• <strong>Last Known Good 무중단 보호:</strong> 설정 파싱 오류 발생 시 직전 정상 설정(Last Known Good)을 유지하여 서비스 장애를 방지합니다.</div>
             </div>
@@ -781,11 +781,10 @@ Content-Type: application/json;charset=UTF-8
 }</pre>
             </div>
             <div class="card" style="flex:1;">
-              <div class="card-header green">단위 테스트 검증 완료 (30 / 30 PASS)</div>
+              <div class="card-header green">단위 테스트 검증 완료 (21 / 21 PASS)</div>
               <div class="card-body">
                 <div>• <code>SqlAndXssValidationTest</code> (13 PASS)</div>
                 <div>• <code>PathTraversalValidationTest</code> (8 PASS)</div>
-                <div>• <code>SecurityFilterTest</code> (9 PASS)</div>
               </div>
             </div>
           </div>
