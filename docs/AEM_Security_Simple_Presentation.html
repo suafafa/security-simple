@@ -255,7 +255,7 @@
           <span class="badge">01. OVERVIEW</span>
           <div class="slide-title">추진 배경 및 경량화 아키텍처 설계 목표</div>
         </div>
-        <div class="page-num">02 / 12</div>
+        <div class="page-num">02 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-3">
@@ -304,7 +304,7 @@
           <span class="badge">02. ARCHITECTURE</span>
           <div class="slide-title">전체 시스템 아키텍처 및 요청 처리 파이프라인</div>
         </div>
-        <div class="page-num">03 / 12</div>
+        <div class="page-num">03 / 15</div>
       </div>
       <div class="slide-body">
         <div class="flow-row">
@@ -348,14 +348,340 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
       </div>
     </section>
 
-    <!-- SLIDE 4 -->
+    <!-- SLIDE 4: ARCHITECTURE DIAGRAM -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">03. DYNAMIC BINDING & INHERITANCE</span>
+          <span class="badge">03. ARCHITECTURE DIAGRAM</span>
+          <div class="slide-title">전체 시스템 아키텍처 다이어그램 (System Architecture)</div>
+        </div>
+        <div class="page-num">04 / 15</div>
+      </div>
+      <div class="slide-body" style="display:grid;grid-template-columns:1.1fr 3.6fr 1.2fr;gap:14px;">
+        <!-- Left: Client & Block -->
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div class="card" style="flex:1;border-color:#1e293b;">
+            <div class="card-header navy">[Client] 웹 브라우저 / 외부 호출</div>
+            <div class="card-body" style="font-size:12px;">
+              <div><strong style="color:#2563eb;">HTTP/HTTPS 요청 인입 ➔</strong></div>
+              <div>• URI: <code>/aemapi/*</code>, <code>/sysapi/*</code></div>
+              <div>• Method: <code>GET, POST, ...</code></div>
+              <div>• Header: <code>Referer, Origin</code></div>
+              <div>• Header: <code>X-Forwarded-For</code></div>
+              <div>• Query &amp; Form 파라미터</div>
+            </div>
+          </div>
+          <div class="card" style="flex:1.3;border-color:#dc2626;background:#fef2f2;">
+            <div class="card-header red">[Block] 차단 응답 &amp; 감사 로깅</div>
+            <div class="card-body" style="font-size:11.8px;">
+              <div><strong style="color:#dc2626;">[1] Fail-Fast JSON 에러 응답</strong></div>
+              <div>• 403 <code>SEC-40303</code> (Referer)</div>
+              <div>• 405 <code>SEC-40501</code> (Method)</div>
+              <div>• 400 <code>SEC-40001~9</code> (Param)</div>
+              <div><strong>[2] SLF4J WARN/DEBUG 감사 로그</strong></div>
+              <div>• <code>BlockedByConfig</code> (차단 규칙·값)</div>
+              <div>• <code>AppliedServletPolicy</code> (적용 정책)</div>
+              <div>• <code>SecurityUtils</code> (IP / CRLF 정제)</div>
+            </div>
+          </div>
+        </div>
+        <!-- Center: Control Plane & Runtime Data Plane -->
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div class="card" style="background:#eff6ff;border:1.5px solid #93c5fd;">
+            <div class="card-header navy" style="font-size:13px;padding:7px 14px;">[Control Plane] AEM 6.5 OSGi Container &amp; Configuration Admin</div>
+            <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;">
+              <div style="background:#fff;border:1px solid #2563eb;border-radius:8px;padding:8px 10px;font-size:11.5px;">
+                <div style="background:#2563eb;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">OSGi OCD 전역 설정 (SecurityFilter.config)</div>
+                <div>• <code>enabled</code> / <code>sling.filter.pattern</code></div>
+                <div>• <code>validator.referer|method|param.enabled</code></div>
+                <div>• <code>default.*</code> (<code>abc.com</code>, <code>GET/POST</code>, 공통 params)</div>
+                <div>• <code>default.ignoreServletPolicies</code> (글로벌 강제)</div>
+              </div>
+              <div style="background:#fff;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
+                <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">OSGi @Reference 동적 서블릿 감지 (boundServlets)</div>
+                <div>• <code>bindServlet()</code> / <code>unbindServlet()</code> 실시간 감지</div>
+                <div>• 서블릿 <code>@Component</code> (<code>security.methods/params</code>)</div>
+                <div>• <code>inheritFrom(defaultPolicy)</code> 기본 정책 자동 상속</div>
+                <div>• 바인딩/언바인딩 디버그 로그 노이즈 억제</div>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="flex:1;border:2px solid #2563eb;">
+            <div class="card-header" style="font-size:13.5px;padding:8px 14px;">[Runtime Data Plane] SecurityFilter (sling.filter.scope=REQUEST, ranking=10000)</div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:10px;padding:10px;">
+              <div style="display:grid;grid-template-columns:1fr 1.8fr;gap:10px;">
+                <div style="background:#f8fafc;border:1px solid #334155;border-radius:8px;padding:8px 10px;font-size:11.5px;">
+                  <div style="background:#1e293b;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">Stage 1. Fast-Path 패턴 가드</div>
+                  <div>• 필터 <code>enabled</code> 활성화 확인</div>
+                  <div>• <code>matchesFilterPattern(uri)</code> 정규식 매칭</div>
+                  <div>• 미대상 경로는 즉시 Bypass 통과</div>
+                </div>
+                <div style="background:#f0fdfa;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
+                  <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">Stage 2. 6단계 고속 정책 매칭 엔진 (ServletSecurityConfig)</div>
+                  <div>• <code>ignoreServletPolicies=true</code> 시 글로벌 <code>defaultPolicy</code> 즉시 반환</div>
+                  <div>• Tier 1~2: Exact/Base URI <code>O(1)</code> | Tier 3: ResourceType <code>O(1)</code></div>
+                  <div>• Tier 4~5: Regex/Prefix 매칭 | Tier 6: <code>defaultPolicy</code> 안전 폴백</div>
+                </div>
+              </div>
+              <div style="background:#eef2ff;border:1.5px solid #4f46e5;border-radius:8px;padding:8px 10px;">
+                <div style="background:#4f46e5;color:#fff;font-weight:700;font-size:11.5px;padding:3px 8px;border-radius:5px;margin-bottom:8px;">Stage 3. 핵심 3대 PolicyValidator 체인 순차 실행 (Fail-Fast: 위반 시 즉시 차단 / 통과 시 다음 단계)</div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11.2px;">
+                  <div style="background:#fff;border:1px solid #0d9488;border-radius:6px;padding:6px 8px;">
+                    <div style="color:#0d9488;font-weight:800;">1. RefererPolicyValidator</div>
+                    <div>• Referer/Origin 호스트 추출</div>
+                    <div>• <code>abc.com</code> &amp; <code>allowedReferrers</code></div>
+                    <div style="color:#dc2626;font-weight:700;">• 위반: 403 (SEC-40303)</div>
+                  </div>
+                  <div style="background:#fff;border:1px solid #2563eb;border-radius:6px;padding:6px 8px;">
+                    <div style="color:#2563eb;font-weight:800;">2. MethodPolicyValidator</div>
+                    <div>• HTTP Method 확인</div>
+                    <div>• <code>upperMethods</code> Set <code>O(1)</code> 조회</div>
+                    <div style="color:#dc2626;font-weight:700;">• 위반: 405 (SEC-40501)</div>
+                  </div>
+                  <div style="background:#fff;border:1px solid #4f46e5;border-radius:6px;padding:6px 8px;">
+                    <div style="color:#4f46e5;font-weight:800;">3. ParamPolicyValidator</div>
+                    <div>• 필수(40001) / 미정의(40002)</div>
+                    <div>• PathTraversal·SQL/JCRi·XSS</div>
+                    <div style="color:#dc2626;font-weight:700;">• 위반: 400 (SEC-40001~9)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Right: Target Servlets -->
+        <div class="card" style="border-color:#16a34a;background:#f0fdf4;">
+          <div class="card-header green">[Target] 대상 Sling 서블릿 계층</div>
+          <div class="card-body" style="font-size:11.8px;gap:10px;">
+            <div style="background:#fff;border:1px solid #16a34a;border-radius:6px;padding:8px;">
+              <strong style="color:#16a34a;">FilterChain.doFilter()</strong>
+              <div>• <code>PassedConfig</code> DEBUG 로깅</div>
+              <div>• 검증 완료된 안전한 요청만 전달</div>
+            </div>
+            <div style="background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:8px;">
+              <strong>UserContactServlet</strong>
+              <div>• <code>/aemapi/user/contact</code></div>
+              <div>• POST / DSL 파라미터 검증</div>
+            </div>
+            <div style="background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:8px;">
+              <strong>MultiPathOrderServlet</strong>
+              <div>• <code>/aemapi/order/inquiry</code> (GET)</div>
+              <div>• <code>/aemapi/order/cancel</code> (POST)</div>
+            </div>
+            <div style="background:#fff;border:1px solid #1e293b;border-radius:6px;padding:8px;">
+              <strong>AEM JCR &amp; OSGi 비즈니스 로직</strong>
+              <div>• 미선언 서블릿도 <code>defaultPolicy</code> 보호</div>
+              <div>• JCR ResourceResolver 안전 실행</div>
+              <div style="color:#16a34a;font-weight:700;">• 정상 200 OK 응답 반환</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: LIFECYCLE & FLOW -->
+    <section class="slide">
+      <div class="slide-header">
+        <div class="header-left">
+          <span class="badge">04. LIFECYCLE &amp; FLOW</span>
+          <div class="slide-title">필터 생명주기 및 처리 흐름도 (activate · bindServlet · doFilter)</div>
+        </div>
+        <div class="page-num">05 / 15</div>
+      </div>
+      <div class="slide-body" style="gap:10px;">
+        <div class="flow-row" style="grid-template-columns:repeat(6,1fr);gap:8px;">
+          <div class="flow-step" style="padding:8px;"><h4>OSGi Container</h4><p>AEM / Felix SCR</p></div>
+          <div class="flow-step" style="padding:8px;border-top-color:#475569;"><h4>Web Client</h4><p>Browser / API 호출</p></div>
+          <div class="flow-step" style="padding:8px;border-top-color:#2563eb;"><h4>SecurityFilter</h4><p>Sling REQUEST 필터</p></div>
+          <div class="flow-step" style="padding:8px;border-top-color:#0d9488;"><h4>ServletSecurityConfig</h4><p>정책 컨테이너 / 인덱스</p></div>
+          <div class="flow-step" style="padding:8px;border-top-color:#4f46e5;"><h4>3대 Validator 체인</h4><p>Referer·Method·Param</p></div>
+          <div class="flow-step" style="padding:8px;border-top-color:#16a34a;"><h4>대상 Sling 서블릿</h4><p>비즈니스 로직 실행</p></div>
+        </div>
+        <div class="card" style="background:#eff6ff;border-color:#93c5fd;">
+          <div class="card-header" style="padding:6px 14px;font-size:13px;">[Phase 1] 기동 및 설정 로드 (@Activate / @Modified activate(Config))</div>
+          <div class="card-body" style="padding:8px 14px;font-size:12px;gap:4px;">
+            <div><strong>① OSGi Container ➔ SecurityFilter :</strong> <code>activate(Config config)</code> 호출 — <code>sling.filter.pattern</code> 정규식 사전 컴파일 (<code>updateFilterPattern</code>)</div>
+            <div><strong>② SecurityFilter ➔ ServletSecurityConfig :</strong> <code>buildDefaultPolicy(config)</code> &amp; <code>newConfig.init()</code> — <code>default.*</code> 기본 정책 생성, 검증기 On/Off 토글, <code>ignoreServletPolicies</code> 설정</div>
+            <div><strong>③ SecurityFilter ➔ ServletSecurityConfig :</strong> 기존 <code>boundServlets</code> 순회 ➔ <code>registerDynamicPolicy(rule)</code> (필터보다 먼저 등록된 서블릿들에 새 <code>defaultPolicy</code> 상속 및 동기화)</div>
+          </div>
+        </div>
+        <div class="card" style="background:#f0fdfa;border-color:#5eead4;">
+          <div class="card-header teal" style="padding:6px 14px;font-size:13px;">[Phase 2] 서블릿 동적 감지 (@Reference bindServlet / unbindServlet)</div>
+          <div class="card-body" style="padding:8px 14px;font-size:12px;gap:4px;">
+            <div><strong>④ OSGi Container ➔ SecurityFilter :</strong> <code>bindServlet(servlet, properties)</code> — <code>isApplicableServlet()</code> 필터 패턴 일치 확인 후 <code>boundServlets</code> 저장 (바인딩 디버그 로그 미출력)</div>
+            <div><strong>⑤ SecurityFilter ➔ ServletSecurityConfig :</strong> <code>ServletPolicyRule.fromOsgiProperties(props, defaultPolicy)</code> 파싱 + <code>inheritFrom(defaultPolicy)</code> 상속 후 <code>registerDynamicPolicy()</code> O(1) 맵 인덱싱</div>
+          </div>
+        </div>
+        <div class="card" style="background:#eef2ff;border-color:#a5b4fc;flex:1;">
+          <div class="card-header indigo" style="padding:6px 14px;font-size:13px;">[Phase 3] 실시간 HTTP 요청 가로채기 및 검증 (doFilter &amp; evaluatePoliciesAndFindActive)</div>
+          <div class="card-body" style="padding:8px 14px;font-size:12px;gap:4px;">
+            <div><strong>⑥ Web Client ➔ SecurityFilter :</strong> <code>doFilter(request, response, chain)</code> — 1차 Bypass 가드 (<code>enabled</code> 여부 및 <code>matchesFilterPattern(requestUri)</code> 확인)</div>
+            <div><strong>⑦ SecurityFilter ➔ ServletSecurityConfig :</strong> <code>findMatchingPolicy(request)</code> ➔ <code>matchedPolicy</code> 반환 (<code>ignoreServletPolicies</code> 체크 또는 Tier 1~6 탐색)</div>
+            <div><strong>⑧ SecurityFilter ➔ 3대 Validator 체인 :</strong> <code>validate(req, matchedPolicy, config)</code> 순차 실행 — ① Referer(403 <code>SEC-40303</code>) ➔ ② Method(405 <code>SEC-40501</code>) ➔ ③ Param(400 <code>SEC-40001~9</code>)</div>
+            <div style="color:#16a34a;"><strong>⑨-A [검증 통과 PASS] SecurityFilter ➔ 대상 Sling 서블릿 :</strong> <code>PassedConfig</code> 디버그 로깅 후 <code>chain.doFilter(request, response)</code> 호출하여 비즈니스 로직 정상 수행 (200 OK)</div>
+            <div style="color:#dc2626;"><strong>⑨-B [검증 실패 FAIL-FAST] SecurityFilter ➔ Web Client :</strong> <code>handleSecurityViolation()</code> 즉시 중단 — <code>BlockedByConfig</code> + <code>AppliedServletPolicy</code> WARN 로깅 및 JSON 에러 응답 반환</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: CLASS DIAGRAM -->
+    <section class="slide">
+      <div class="slide-header">
+        <div class="header-left">
+          <span class="badge">05. CLASS DIAGRAM</span>
+          <div class="slide-title">핵심 클래스 다이어그램 및 데이터 모델 관계도 (UML Class Diagram)</div>
+        </div>
+        <div class="page-num">06 / 15</div>
+      </div>
+      <div class="slide-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="card" style="border-color:#2563eb;flex:1;">
+            <div class="card-header navy" style="font-size:12.5px;padding:6px 10px;">«Filter» SecurityFilter</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:11px;padding:8px 10px;gap:3px;">
+              <div>- enabled : boolean</div>
+              <div>- filterPattern : String</div>
+              <div>- compiledFilterPattern : Pattern</div>
+              <div>- servletSecurityConfig : Config</div>
+              <div>- boundServlets : Map&lt;Servlet,Map&gt;</div>
+              <div>- validators : List&lt;PolicyValidator&gt;</div>
+              <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
+              <div>+ activate(Config) / deactivate()</div>
+              <div>+ bindServlet(Servlet, Map)</div>
+              <div>+ unbindServlet(Servlet, Map)</div>
+              <div>+ doFilter(req, res, chain)</div>
+              <div>- evaluatePoliciesAndFindActive()</div>
+              <div>- handleSecurityViolation(...)</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:#334155;">
+            <div class="card-header" style="background:#334155;font-size:12px;padding:5px 10px;">«OCD» SecurityFilter.Config</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:6px 10px;gap:2px;">
+              <div>+ enabled() / sling_filter_pattern()</div>
+              <div>+ validator_referer|method|param()</div>
+              <div>+ default_referrer() / default_methods()</div>
+              <div>+ default_params() : String[]</div>
+              <div>+ default_ignoreServletPolicies()</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:#475569;">
+            <div class="card-header" style="background:#475569;font-size:12px;padding:5px 10px;">«Utility» SecurityUtils</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:6px 10px;gap:2px;">
+              <div>+ getClientIp(req) / sanitizeForLog(s)</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="card" style="border-color:#0d9488;flex:1;">
+            <div class="card-header teal" style="font-size:12.5px;padding:6px 10px;">«Container» ServletSecurityConfig</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:11px;padding:8px 10px;gap:3px;">
+              <div>- enabled : Boolean</div>
+              <div>- defaultReferrer : String = "abc.com"</div>
+              <div>- ignoreServletPolicies : Boolean</div>
+              <div>- defaultPolicy : ServletPolicyRule</div>
+              <div>- policies : List&lt;ServletPolicyRule&gt;</div>
+              <div>- dynamicExactUriMap : Map</div>
+              <div>- dynamicResourceTypeMap : Map</div>
+              <div>- dynamicPatternPolicies : List</div>
+              <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
+              <div>+ init() : void</div>
+              <div>+ findMatchingPolicy(req) : Rule</div>
+              <div>+ registerDynamicPolicy(rule)</div>
+              <div>+ unregisterDynamicPolicy(target)</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:#2563eb;flex:1;">
+            <div class="card-header" style="font-size:12.5px;padding:6px 10px;">«Model» ServletPolicyRule</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:11px;padding:8px 10px;gap:3px;">
+              <div>- target : String / enabled : Boolean</div>
+              <div>- methods : List (upperMethods : Set)</div>
+              <div>- defaultReferrer / allowedReferrers</div>
+              <div>- allowUndefinedParams : Boolean</div>
+              <div>- blockSqlInjection / blockXss</div>
+              <div>- params : Map&lt;String, ParamRule&gt;</div>
+              <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
+              <div>+ init() / matches(req) : boolean</div>
+              <div>+ inheritFrom(ServletPolicyRule)</div>
+              <div>+ fromOsgiProperties(props, default)</div>
+              <div>+ parseSimpleParamSpec(spec)</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="card" style="border-color:#4f46e5;">
+            <div class="card-header indigo" style="font-size:12.5px;padding:6px 10px;">«Interface» PolicyValidator</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:10.8px;padding:6px 10px;gap:2px;">
+              <div>+ getName() : String</div>
+              <div>+ isEnabled(policy, cfg) : boolean</div>
+              <div>+ validate(req, policy, cfg) : Result</div>
+              <div>+ describePassedConfig(...) : String</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:#4f46e5;background:#eef2ff;">
+            <div class="card-header indigo" style="font-size:12px;padding:5px 10px;">3 Concrete PolicyValidators (implements)</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:6px 10px;gap:4px;">
+              <div><strong style="color:#0d9488;">1. RefererPolicyValidator</strong><br/>+ isRefererAllowed() / extractHost()</div>
+              <div><strong style="color:#2563eb;">2. MethodPolicyValidator</strong><br/>+ policy.isMethodAllowed(method)</div>
+              <div><strong style="color:#4f46e5;">3. ParamPolicyValidator</strong><br/>+ isPathTraversal / isSqlInjection / isXss</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:#4f46e5;flex:1;">
+            <div class="card-header indigo" style="font-size:12.5px;padding:6px 10px;">«Model» ParamRule</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:11px;padding:8px 10px;gap:2px;">
+              <div>- enabled / required : Boolean</div>
+              <div>- minLength / maxLength : Integer</div>
+              <div>- pattern / compiledPattern : Pattern</div>
+              <div>- allowPathTraversal : Boolean</div>
+              <div>- allowSqlInjection / allowXss</div>
+              <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
+              <div>+ init() / validate(...) / toSummaryString()</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="card" style="border-color:#d97706;flex:1;">
+            <div class="card-header amber" style="font-size:12.5px;padding:6px 10px;">«DTO» ValidationResult</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:11px;padding:8px 10px;gap:3px;">
+              <div>- valid : boolean</div>
+              <div>- statusCode : int</div>
+              <div>- errorCode : SecurityErrorCode</div>
+              <div>- blockedConfig : String</div>
+              <div>- violationDetail : String</div>
+              <div>- responseMessage : String</div>
+              <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
+              <div>+ ok() : ValidationResult</div>
+              <div>+ errorWithConfig(code, cfg, ...)</div>
+              <div>+ isValid() / getSubCode()</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:#dc2626;flex:1;">
+            <div class="card-header red" style="font-size:12.5px;padding:6px 10px;">«Enum» SecurityErrorCode</div>
+            <div class="card-body" style="font-family:Consolas,monospace;font-size:10.8px;padding:8px 10px;gap:2px;">
+              <div>REFERER_UNTRUSTED (403, SEC-40303)</div>
+              <div>METHOD_NOT_ALLOWED (405, SEC-40501)</div>
+              <div>PARAM_REQUIRED (400, SEC-40001)</div>
+              <div>PARAM_UNDEFINED (400, SEC-40002)</div>
+              <div>PARAM_TOO_SHORT/LONG (40003~4)</div>
+              <div>PARAM_INVALID_FORMAT (SEC-40005)</div>
+              <div>PARAM_PATH_TRAVERSAL (SEC-40007)</div>
+              <div>PARAM_SQL_INJECTION (SEC-40008)</div>
+              <div>PARAM_XSS (400, SEC-40009)</div>
+              <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
+              <div>+ getHttpStatus() / getSubCode()</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7 -->
+    <section class="slide">
+      <div class="slide-header">
+        <div class="header-left">
+          <span class="badge">06. DYNAMIC BINDING & INHERITANCE</span>
           <div class="slide-title">OSGi 동적 서블릿 바인딩 및 기본 정책 상속 메커니즘</div>
         </div>
-        <div class="page-num">04 / 12</div>
+        <div class="page-num">07 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-2" style="max-height:245px;">
@@ -397,10 +723,10 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">04. POLICY MATCHING ENGINE</span>
+          <span class="badge">07. POLICY MATCHING ENGINE</span>
           <div class="slide-title">6단계(Tier 1~6) 우선순위 기반 고속 정책 매칭 엔진</div>
         </div>
-        <div class="page-num">05 / 12</div>
+        <div class="page-num">08 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-3">
@@ -450,14 +776,14 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
       </div>
     </section>
 
-    <!-- SLIDE 6 -->
+    <!-- SLIDE 9 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">05. VALIDATOR #1</span>
+          <span class="badge">08. VALIDATOR #1</span>
           <div class="slide-title">RefererPolicyValidator — 출처(Referer) 검증 및 CSRF 방어</div>
         </div>
-        <div class="page-num">06 / 12</div>
+        <div class="page-num">09 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -499,14 +825,14 @@ for (String allowed : policy.getAllowedReferrers()) {
       </div>
     </section>
 
-    <!-- SLIDE 7 -->
+    <!-- SLIDE 10 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">06. VALIDATOR #2</span>
+          <span class="badge">09. VALIDATOR #2</span>
           <div class="slide-title">MethodPolicyValidator — HTTP Method 화이트리스트 통제</div>
         </div>
-        <div class="page-num">07 / 12</div>
+        <div class="page-num">10 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -548,14 +874,14 @@ public ValidationResult validate(HttpServletRequest request,
       </div>
     </section>
 
-    <!-- SLIDE 8 -->
+    <!-- SLIDE 11 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">07. VALIDATOR #3</span>
+          <span class="badge">10. VALIDATOR #3</span>
           <div class="slide-title">ParamPolicyValidator — 6단계 심층 파라미터 보안 검증</div>
         </div>
-        <div class="page-num">08 / 12</div>
+        <div class="page-num">11 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-3">
@@ -600,14 +926,14 @@ public ValidationResult validate(HttpServletRequest request,
       </div>
     </section>
 
-    <!-- SLIDE 9 -->
+    <!-- SLIDE 12 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">08. DEVELOPER GUIDE</span>
+          <span class="badge">11. DEVELOPER GUIDE</span>
           <div class="slide-title">간편 파라미터 DSL 문법 및 서블릿 적용 예제</div>
         </div>
-        <div class="page-num">09 / 12</div>
+        <div class="page-num">12 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -652,14 +978,14 @@ public class MultiPathOrderServlet extends SlingAllMethodsServlet {}</pre>
       </div>
     </section>
 
-    <!-- SLIDE 10 -->
+    <!-- SLIDE 13 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">09. OSGI CONFIGURATION</span>
+          <span class="badge">12. OSGI CONFIGURATION</span>
           <div class="slide-title">OSGi .config 전역 설정 구조 및 무중단 복원력</div>
         </div>
-        <div class="page-num">10 / 12</div>
+        <div class="page-num">13 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -705,14 +1031,14 @@ default.ignoreServletPolicies=B"false"</pre>
       </div>
     </section>
 
-    <!-- SLIDE 11 -->
+    <!-- SLIDE 14 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">10. OBSERVABILITY & LOGGING</span>
+          <span class="badge">13. OBSERVABILITY & LOGGING</span>
           <div class="slide-title">디버그 로깅 체계 및 차단 설정(BlockedByConfig) 상세 추적</div>
         </div>
-        <div class="page-num">11 / 12</div>
+        <div class="page-num">14 / 15</div>
       </div>
       <div class="slide-body">
         <div class="card" style="flex:0 0 auto;">
@@ -743,14 +1069,14 @@ SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/u
       </div>
     </section>
 
-    <!-- SLIDE 12 -->
+    <!-- SLIDE 15 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">11. ERROR SPECIFICATION</span>
+          <span class="badge">14. ERROR SPECIFICATION</span>
           <div class="slide-title">표준 보안 에러 코드 체계 및 JSON 응답 규격</div>
         </div>
-        <div class="page-num">12 / 12</div>
+        <div class="page-num">15 / 15</div>
       </div>
       <div class="slide-body">
         <div class="grid-2" style="grid-template-columns: 1.75fr 1fr;">
@@ -784,10 +1110,11 @@ Content-Type: application/json;charset=UTF-8
 }</pre>
             </div>
             <div class="card" style="flex:1;">
-              <div class="card-header green">단위 테스트 검증 완료 (21 / 21 PASS)</div>
+              <div class="card-header green">단위 테스트 검증 완료 (26 / 26 PASS)</div>
               <div class="card-body">
                 <div>• <code>SqlAndXssValidationTest</code> (13 PASS)</div>
                 <div>• <code>PathTraversalValidationTest</code> (8 PASS)</div>
+                <div>• <code>IgnoreServletPoliciesTest</code> (5 PASS)</div>
               </div>
             </div>
           </div>
