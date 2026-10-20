@@ -9,7 +9,7 @@ AEM 6.5 서블릿을 위한 **경량 보안 필터(`SecurityFilter`)** 프로젝
 
 전체 시스템 아키텍처, 6단계 정책 매칭, 3대 Validator 동작 원리, DSL 문법, 로깅(`BlockedByConfig` / `AppliedServletPolicy`) 및 에러 코드 규격을 설명하는 프레젠테이션 문서가 [`docs/`](docs/) 디렉토리에 포함되어 있습니다:
 
-- 📑 **PowerPoint 문서 (`.pptx`)**: [`docs/AEM_Security_Simple_Architecture_Guide.pptx`](docs/AEM_Security_Simple_Architecture_Guide.pptx) (총 15슬라이드, 16:9 와이드스크린 — 시스템 아키텍처 다이어그램, 필터 생명주기 및 처리 흐름도, UML 클래스 다이어그램 포함)
+- 📑 **PowerPoint 문서 (`.pptx`)**: [`docs/AEM_Security_Simple_Architecture_Guide.pptx`](docs/AEM_Security_Simple_Architecture_Guide.pptx) (총 19슬라이드, 16:9 와이드스크린 — 시스템 아키텍처 다이어그램[심플/상세], 필터 생명주기 및 처리 흐름도[Phase 1·2·3 시퀀스 다이어그램], UML 클래스 다이어그램[심플/상세] 포함)
 - 🌐 **웹 슬라이드 덱 (`.html`)**: [`docs/AEM_Security_Simple_Presentation.html`](docs/AEM_Security_Simple_Presentation.html) (브라우저에서 바로 열람 및 방향키 `←`/`→` 이동, `Cmd+P` PDF 인쇄 지원)
 
 ---
