@@ -630,7 +630,7 @@ public class ServletPolicyRule {
         // 5. 가능한 모든 설정 형식(공통 + 타겟별)으로부터 파라미터 규칙 통합
         Map<String, ParamRule> consolidatedParams = new LinkedHashMap<>();
 
-        // 파라미터 (1): JSON 형식 (예: security.params.json)
+        // 파라미터 (1): JSON 형식 (예: security.params.json 또는 security.params.json[/aemapi/path])
         String paramsJson = extractTargetString(props, currentTarget, allTargets, "security.params.json", "params.json");
         if (StringUtils.isNotBlank(paramsJson) && paramsJson.trim().startsWith("{")) {
             try {
@@ -642,8 +642,10 @@ public class ServletPolicyRule {
             } catch (Exception ignored) {}
         }
 
-        // 파라미터 (2): 간편 DSL 형식 (공통 "name:required:2..20" 및 경로별 "/aemapi/path:name:required:2..20" 모두 지원)
-        List<String> rawParamEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, "security.params", "security.parameters", "params");
+        // 파라미터 (2): 간편 DSL 형식
+        // - 공통: security.params=name:required:2..20
+        // - 경로별: security.params[/aemapi/order/inquiry]=includeHistory:optional:true|false:5 (키에 [경로]를 명시하는 방식만 지원)
+        List<String> rawParamEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, allTargets, "security.params", "security.parameters", "params");
         if (!rawParamEntries.isEmpty()) {
             for (String rawSpec : rawParamEntries) {
                 if (StringUtils.isBlank(rawSpec) || rawSpec.trim().startsWith("{")) continue;
@@ -651,7 +653,7 @@ public class ServletPolicyRule {
                 String targetPrefix = scoped[0];
                 String specBody = scoped[1];
                 if (targetPrefix == null || targetPrefix.equalsIgnoreCase(currentTarget)) {
-                    String[] subItems = specBody.contains(",") ? specBody.split(",") : new String[]{specBody};
+                    List<String> subItems = splitPreservingParens(specBody, ',');
                     for (String item : subItems) {
                         Map.Entry<String, ParamRule> entry = parseSimpleParamSpec(item);
                         if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
@@ -662,8 +664,8 @@ public class ServletPolicyRule {
             }
         }
 
-        // 파라미터 (3): 개별 속성 형식 (예: "security.param.name=required:2..20" 또는 "security./aemapi/path.param.name=required:2..20")
-        String targetParamPrefix1 = "security." + currentTarget + ".param.";
+        // 파라미터 (3): 개별 속성 형식 (예: "security.param.name=required:2..20" 또는 "security.param[/aemapi/path].name=required:2..20")
+        String targetParamPrefix1 = "security.param[" + currentTarget + "].";
         String targetParamPrefix2 = "param[" + currentTarget + "].";
         for (Map.Entry<String, Object> entry : props.entrySet()) {
             String key = entry.getKey();
@@ -686,9 +688,8 @@ public class ServletPolicyRule {
                     }
                 } else {
                     String valStr = entry.getValue().toString().trim();
-                    String[] scopedVal = splitTargetPrefix(valStr, allTargets);
-                    if (scopedVal[0] == null || scopedVal[0].equalsIgnoreCase(currentTarget)) {
-                        String spec = sub + ":" + scopedVal[1];
+                    if (!isLegacyTargetScopedValue(valStr, allTargets)) {
+                        String spec = sub + ":" + valStr;
                         Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(spec);
                         if (parsed != null && StringUtils.isNotBlank(parsed.getKey())) {
                             ParamRule existing = consolidatedParams.get(parsed.getKey().toLowerCase());
@@ -724,8 +725,8 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 설정 문자열에서 타겟 경로 접두사(예: {@code [/aemapi/path]value} 또는 {@code /aemapi/path:value})와
-     * 실제 설정 본문을 분리합니다.
+     * 설정 문자열에서 대괄호 기반 타겟 경로 접두사(예: {@code [/aemapi/path]value})와
+     * 실제 설정 본문을 분리합니다. ({@code /aemapi/path:value} 형식은 지원하지 않으며 {@code security.params[/aemapi/path]=...} 방식만 지원합니다.)
      *
      * @param rawValue   원본 설정 문자열
      * @param allTargets 서블릿의 전체 타겟 목록
@@ -745,46 +746,32 @@ public class ServletPolicyRule {
             }
             return new String[]{target, rest};
         }
-        if (allTargets != null) {
-            for (String t : allTargets) {
-                if (StringUtils.isNotBlank(t)) {
-                    String cleanT = t.trim();
-                    if (trimmed.regionMatches(true, 0, cleanT, 0, cleanT.length())
-                            && trimmed.length() > cleanT.length()
-                            && trimmed.charAt(cleanT.length()) == ':') {
-                        return new String[]{cleanT, trimmed.substring(cleanT.length() + 1).trim()};
-                    }
-                }
-            }
-        }
-        if (trimmed.startsWith("/")) {
-            int colonIdx = trimmed.indexOf(':');
-            if (colonIdx > 1) {
-                return new String[]{trimmed.substring(0, colonIdx).trim(), trimmed.substring(colonIdx + 1).trim()};
-            }
-        }
         return new String[]{null, trimmed};
     }
 
     /**
-     * OSGi 프로퍼티 맵에서 기본 키 및 타겟별 확장 키에 해당하는 문자열 항목들을 모두 추출합니다.
+     * OSGi 프로퍼티 맵에서 기본 키 및 대괄호 타겟 키({@code key[target]})에 해당하는 문자열 항목들을 모두 추출합니다.
      *
      * @param props         OSGi 프로퍼티 맵
      * @param currentTarget 현재 타겟 경로
+     * @param allTargets    서블릿의 전체 타겟 목록
      * @param baseKeys      검색할 기본 프로퍼티 키 목록
      * @return 추출된 원본 문자열 리스트
      */
-    private static List<String> extractRawStringEntriesWithTargetKeys(Map<String, Object> props, String currentTarget, String... baseKeys) {
+    private static List<String> extractRawStringEntriesWithTargetKeys(Map<String, Object> props, String currentTarget, List<String> allTargets, String... baseKeys) {
         List<String> rawEntries = new ArrayList<>();
         for (String k : baseKeys) {
-            rawEntries.addAll(extractRawStringsForKey(props, k));
+            for (String val : extractRawStringsForKey(props, k)) {
+                // 레거시 "target:paramSpec" 및 "[target]paramSpec" 형식은 무시하고 순수 공통 설정만 반영
+                if (!isLegacyTargetScopedValue(val, allTargets)) {
+                    rawEntries.add(val);
+                }
+            }
             if (StringUtils.isNotBlank(currentTarget)) {
                 String shortKey = k.startsWith("security.") ? k.substring("security.".length()) : k;
                 for (String tk : Arrays.asList(
                         k + "[" + currentTarget + "]",
-                        shortKey + "[" + currentTarget + "]",
-                        "security." + currentTarget + "." + shortKey,
-                        currentTarget + "." + shortKey)) {
+                        shortKey + "[" + currentTarget + "]")) {
                     for (String val : extractRawStringsForKey(props, tk)) {
                         rawEntries.add("[" + currentTarget + "]" + val);
                     }
@@ -792,6 +779,40 @@ public class ServletPolicyRule {
             }
         }
         return rawEntries;
+    }
+
+    /**
+     * 레거시 방식인 값 내부에 타겟 접두사를 포함하는 형태(예: {@code /aemapi/path:paramName:...} 또는 {@code [/aemapi/path]paramName:...})인지 판별합니다.
+     * 타겟별 설정은 오직 프로퍼티 키에 대괄호를 명시하는 {@code security.params[/aemapi/path]=...} 형식만 지원합니다.
+     *
+     * @param rawValue   검사할 설정값 문자열
+     * @param allTargets 서블릿의 전체 타겟 목록
+     * @return 레거시 타겟 접두사 형식이면 true
+     */
+    private static boolean isLegacyTargetScopedValue(String rawValue, List<String> allTargets) {
+        if (StringUtils.isBlank(rawValue)) {
+            return false;
+        }
+        String trimmed = rawValue.trim();
+        if (trimmed.startsWith("[") && trimmed.indexOf(']') > 1) {
+            return true;
+        }
+        if (trimmed.startsWith("/") && trimmed.indexOf(':') > 1) {
+            return true;
+        }
+        if (allTargets != null) {
+            for (String t : allTargets) {
+                if (StringUtils.isNotBlank(t)) {
+                    String cleanT = t.trim();
+                    if (trimmed.regionMatches(true, 0, cleanT, 0, cleanT.length())
+                            && trimmed.length() > cleanT.length()
+                            && trimmed.charAt(cleanT.length()) == ':') {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -837,7 +858,7 @@ public class ServletPolicyRule {
      * @return 추출된 문자열 리스트
      */
     private static List<String> extractTargetStringList(Map<String, Object> props, String currentTarget, List<String> allTargets, String... keys) {
-        List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, keys);
+        List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, allTargets, keys);
         List<String> targetSpecific = new ArrayList<>();
         List<String> common = new ArrayList<>();
 
@@ -873,7 +894,7 @@ public class ServletPolicyRule {
      * @return 추출된 문자열 (없으면 null)
      */
     private static String extractTargetString(Map<String, Object> props, String currentTarget, List<String> allTargets, String... keys) {
-        List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, keys);
+        List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, allTargets, keys);
         String targetSpecific = null;
         String common = null;
 
@@ -1073,14 +1094,16 @@ public class ServletPolicyRule {
                 try {
                     rule.setMaxLength(Integer.parseInt(token));
                 } catch (NumberFormatException ignored) {}
-            } else if (token.contains("|")) {
-                rule.setPattern("^(?i)(" + token + ")$");
             } else if ((token.startsWith("pattern(") || token.startsWith("regex(")) && token.endsWith(")")) {
                 int open = token.indexOf('(');
                 rule.setPattern(token.substring(open + 1, token.length() - 1));
             } else if (("pattern".equalsIgnoreCase(token) || "regex".equalsIgnoreCase(token)) && i + 1 < parts.size()) {
                 rule.setPattern(parts.get(i + 1).trim());
                 i++;
+            } else if (token.startsWith("^") || token.endsWith("$")) {
+                rule.setPattern(token);
+            } else if (token.contains("|")) {
+                rule.setPattern("^(?i)(" + token + ")$");
             }
         }
 
