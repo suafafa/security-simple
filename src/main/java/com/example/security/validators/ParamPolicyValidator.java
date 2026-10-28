@@ -10,85 +10,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 /**
  * 요청 파라미터에 대한 다중 계층 보안 검증을 수행하는 모듈형 검증기입니다:
  * - 정의되지 않은 파라미터(allowUndefinedParams) 허용 여부 검사 (기본값: false 차단)
  * - 필수 파라미터(required) 존재 여부 검사
  * - 경로 조작(Path Traversal, CWE-22) 공격 탐지 및 차단
- * - SQL / JCR-SQL2 / XPath 인젝션(CWE-89) 공격 탐지 및 차단
- * - 크로스 사이트 스크립팅(XSS, CWE-79) 공격 탐지 및 차단
  * - 최소/최대 글자 수(minLength, maxLength) 제한 검사
  * - 정규식 패턴(pattern) 일치 검사
  */
 public class ParamPolicyValidator implements PolicyValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(ParamPolicyValidator.class);
-
-    /**
-     * CWE-89: SQL / JCR-SQL2 / XPath 인젝션 공격 시그니처 정규식 목록
-     */
-    private static final List<Pattern> SQLI_PATTERNS = Arrays.asList(
-            // 1. SQL 문법 키워드 결합 (UNION SELECT, SELECT FROM, INSERT INTO, UPDATE SET, DELETE FROM, DROP TABLE, ALTER TABLE)
-            Pattern.compile("(?i)\\b(SELECT|UNION(\\s+ALL)?)\\b[\\s\\S]*?\\b(FROM|INTO)\\b"),
-            Pattern.compile("(?i)\\b(INSERT\\s+INTO|UPDATE\\s+[\\s\\S]*?\\bSET|DELETE\\s+FROM|DROP\\s+(TABLE|DATABASE|VIEW)|ALTER\\s+TABLE|CREATE\\s+(TABLE|DATABASE))\\b"),
-
-            // 2. 불리언 기반(Boolean-based) SQL 인젝션 (' OR '1'='1, ' OR 1=1--, admin'--)
-            Pattern.compile("(?i)('|\")\\s*(OR|AND)\\s*('|\")?\\d+('|\")?\\s*=\\s*('|\")?\\d+"),
-            Pattern.compile("(?i)('|\")\\s*(OR|AND)\\s+['\"\\w]+\\s*[=><!]"),
-            Pattern.compile("(?i)\\bOR\\s+1\\s*=\\s*1\\b"),
-
-            // 3. 주석을 이용한 쿼리 분기 우회 (-- , /* */, #)
-            Pattern.compile("(?i)(--\\s+|;\\s*--|/\\*[\\s\\S]*?\\*/|#\\s+)"),
-
-            // 4. 시간 지연 기반(Time-based Blind) SQL 인젝션 (SLEEP, BENCHMARK, WAITFOR DELAY)
-            Pattern.compile("(?i)\\b(SLEEP|BENCHMARK|WAITFOR\\s+DELAY|PG_SLEEP)\\s*\\("),
-
-            // 5. JCR-SQL2 Injection (AEM 전용 JCR 노드 쿼리 공격 패턴)
-            Pattern.compile("(?i)\\bSELECT\\b[\\s\\S]*?\\bFROM\\s+\\[(nt|cq|rep|mix):[a-zA-Z0-9_-]+\\]"),
-            Pattern.compile("(?i)\\b(ISDESCENDANTNODE|ISCHILDNODE|ISSAMENODE)\\s*\\("),
-
-            // 6. XPath Injection (AEM JCR XPath 쿼리 공격 패턴)
-            Pattern.compile("/jcr:root/|//element\\s*\\("),
-            Pattern.compile("(?i)@jcr:(primaryType|mixinTypes|content|created|title|path)"),
-            Pattern.compile("(?i)jcr:(contains|like|score|deref)\\s*\\(")
-    );
-
-    /**
-     * CWE-79: Cross-Site Scripting (XSS) 공격 시그니처 정규식 목록 (범주별 고속 매칭)
-     */
-    private static final List<Pattern> XSS_TAG_PATTERNS = Arrays.asList(
-            Pattern.compile("(?i)<\\s*script\\b[^>]*>"),
-            Pattern.compile("(?i)<\\s*/\\s*script\\s*>"),
-            Pattern.compile("(?i)<\\s*(iframe|object|embed|applet|meta|link|base)\\b[^>]*>"),
-            Pattern.compile("(?i)<\\s*(svg|img|body|video|audio|input|form|details)\\b[^>]*?\\bon[a-zA-Z]+\\s*=")
-    );
-
-    private static final List<Pattern> XSS_SCHEME_PATTERNS = Arrays.asList(
-            Pattern.compile("(?i)javascript\\s*:"),
-            Pattern.compile("(?i)vbscript\\s*:"),
-            Pattern.compile("(?i)data\\s*:\\s*text\\s*/\\s*html")
-    );
-
-    private static final List<Pattern> XSS_EVENT_PATTERNS = Arrays.asList(
-            Pattern.compile("(?i)\\bon(load|error|click|dblclick|mouseover|mouseout|mouseenter|mouseleave|focus|blur|keydown|keyup|keypress|submit|reset|change|input|pointerdown|pointerup)\\s*=")
-    );
-
-    private static final List<Pattern> XSS_FUNC_PATTERNS = Arrays.asList(
-            Pattern.compile("(?i)\\b(eval|alert|prompt|confirm)\\s*\\(")
-    );
-
-    private static final List<Pattern> XSS_DOM_PATTERNS = Arrays.asList(
-            Pattern.compile("(?i)document\\.(cookie|domain|write)"),
-            Pattern.compile("(?i)(window|document)\\.location")
-    );
-
-    private static final Pattern HEX_LT_PATTERN = Pattern.compile("(?i)&#x3c;|&#60;");
-    private static final Pattern HEX_GT_PATTERN = Pattern.compile("(?i)&#x3e;|&#62;");
 
     /**
      * 검증기 고유 식별자("PARAM")를 반환합니다.
@@ -101,8 +35,8 @@ public class ParamPolicyValidator implements PolicyValidator {
     }
 
     /**
-     * 요청 파라미터 전체를 대상으로 필수 여부, 미정의 파라미터 차단, Path Traversal, SQL/JCR 인젝션,
-     * XSS, 최소/최대 글자 수, 정규식 패턴을 순차적으로 검증합니다.
+     * 요청 파라미터 전체를 대상으로 필수 여부, 미정의 파라미터 차단, Path Traversal,
+     * 최소/최대 글자 수, 정규식 패턴을 순차적으로 검증합니다.
      *
      * @param request    유입된 HTTP 요청
      * @param policy     매칭된 서블릿 보안 정책 규칙
@@ -190,40 +124,18 @@ public class ParamPolicyValidator implements PolicyValidator {
                                 paramName
                         );
                     }
-                    // allowUndefinedParams=true로 허용된 경우에도 Path Traversal, SQLi, XSS 심층 검사는 수행
+                    // allowUndefinedParams=true로 허용된 경우에도 Path Traversal 검사는 수행
                     if (paramValues != null) {
                         for (String val : paramValues) {
-                            if (val != null) {
-                                if (isPathTraversalAttack(val)) {
-                                    String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
-                                            + "(undefined), allowPathTraversal=false, actualValue=" + SecurityUtils.sanitizeForLog(val);
-                                    return ValidationResult.errorWithConfig(
-                                            SecurityErrorCode.PARAM_PATH_TRAVERSAL,
-                                            blockedConfig,
-                                            "Path Traversal attack pattern detected in undefined parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
-                                            paramName
-                                    );
-                                }
-                                if (policy.isBlockSqlInjection() && isSqlInjectionAttack(val)) {
-                                    String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
-                                            + "(undefined), blockSqlInjection=true, actualValue=" + SecurityUtils.sanitizeForLog(val);
-                                    return ValidationResult.errorWithConfig(
-                                            SecurityErrorCode.PARAM_SQL_INJECTION,
-                                            blockedConfig,
-                                            "SQL/JCR Injection attack pattern detected in undefined parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
-                                            paramName
-                                    );
-                                }
-                                if (policy.isBlockXss() && isXssAttack(val)) {
-                                    String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
-                                            + "(undefined), blockXss=true, actualValue=" + SecurityUtils.sanitizeForLog(val);
-                                    return ValidationResult.errorWithConfig(
-                                            SecurityErrorCode.PARAM_XSS,
-                                            blockedConfig,
-                                            "Cross-Site Scripting (XSS) attack pattern detected in undefined parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
-                                            paramName
-                                    );
-                                }
+                            if (val != null && isPathTraversalAttack(val)) {
+                                String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
+                                        + "(undefined), allowPathTraversal=false, actualValue=" + SecurityUtils.sanitizeForLog(val);
+                                return ValidationResult.errorWithConfig(
+                                        SecurityErrorCode.PARAM_PATH_TRAVERSAL,
+                                        blockedConfig,
+                                        "Path Traversal attack pattern detected in undefined parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
+                                        paramName
+                                );
                             }
                         }
                     }
@@ -239,7 +151,7 @@ public class ParamPolicyValidator implements PolicyValidator {
                                         paramName, val.length(), rule.toSummaryString());
                             }
 
-                            // [보안 방어 계층 1] 경로 조작(Path Traversal / Directory Traversal) 탐지
+                            // [보안 방어 계층] 경로 조작(Path Traversal / Directory Traversal) 탐지
                             if (!rule.isAllowPathTraversal() && isPathTraversalAttack(val)) {
                                 String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
                                         + ", allowPathTraversal=false, rule=" + rule.toSummaryString()
@@ -252,40 +164,6 @@ public class ParamPolicyValidator implements PolicyValidator {
                                         SecurityErrorCode.PARAM_PATH_TRAVERSAL,
                                         blockedConfig,
                                         "Path Traversal attack pattern detected in parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
-                                        paramName
-                                );
-                            }
-
-                            // [보안 방어 계층 2] SQL / JCR-SQL2 / XPath 인젝션 탐지
-                            if (policy.isBlockSqlInjection() && !rule.isAllowSqlInjection() && isSqlInjectionAttack(val)) {
-                                String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
-                                        + ", blockSqlInjection=true, allowSqlInjection=false, rule=" + rule.toSummaryString()
-                                        + ", actualValue=" + SecurityUtils.sanitizeForLog(val);
-                                if (LOG.isDebugEnabled()) {
-                                    LOG.debug("[PARAM] SQL/JCR 인젝션 탐지로 차단 - target=[{}], BlockedByConfig=[{}]",
-                                            policy.getTarget(), blockedConfig);
-                                }
-                                return ValidationResult.errorWithConfig(
-                                        SecurityErrorCode.PARAM_SQL_INJECTION,
-                                        blockedConfig,
-                                        "SQL/JCR Injection attack pattern detected in parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
-                                        paramName
-                                );
-                            }
-
-                            // [보안 방어 계층 3] XSS (Cross-Site Scripting) 탐지
-                            if (policy.isBlockXss() && !rule.isAllowXss() && isXssAttack(val)) {
-                                String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
-                                        + ", blockXss=true, allowXss=false, rule=" + rule.toSummaryString()
-                                        + ", actualValue=" + SecurityUtils.sanitizeForLog(val);
-                                if (LOG.isDebugEnabled()) {
-                                    LOG.debug("[PARAM] XSS 공격 패턴 탐지로 차단 - target=[{}], BlockedByConfig=[{}]",
-                                            policy.getTarget(), blockedConfig);
-                                }
-                                return ValidationResult.errorWithConfig(
-                                        SecurityErrorCode.PARAM_XSS,
-                                        blockedConfig,
-                                        "Cross-Site Scripting (XSS) attack pattern detected in parameter [" + SecurityUtils.sanitizeForLog(paramName) + "]: " + SecurityUtils.sanitizeForLog(val),
                                         paramName
                                 );
                             }
@@ -358,7 +236,7 @@ public class ParamPolicyValidator implements PolicyValidator {
     }
 
     /**
-     * 파라미터 검증 통과 시 적용된 파라미터 보안 설정(allowUndefinedParams, blockSqlInjection, blockXss, params)을 요약하여 반환합니다.
+     * 파라미터 검증 통과 시 적용된 파라미터 보안 설정(allowUndefinedParams, params)을 요약하여 반환합니다.
      *
      * @param request    유입된 HTTP 요청
      * @param policy     매칭된 서블릿 보안 정책 규칙
@@ -372,8 +250,6 @@ public class ParamPolicyValidator implements PolicyValidator {
         }
         StringBuilder sb = new StringBuilder();
         sb.append("allowUndefinedParams=").append(policy.isAllowUndefinedParams());
-        sb.append(", blockSqlInjection=").append(policy.isBlockSqlInjection());
-        sb.append(", blockXss=").append(policy.isBlockXss());
         Map<String, ParamRule> configuredParams = policy.getParams();
         if (configuredParams != null && !configuredParams.isEmpty()) {
             sb.append(", params={");
@@ -499,135 +375,5 @@ public class ParamPolicyValidator implements PolicyValidator {
         } catch (Exception ignored) {
             return input;
         }
-    }
-
-    /**
-     * CWE-89: 파라미터 값에 SQL / JCR-SQL2 / XPath 인젝션 공격 시그니처가 포함되어 있는지 정밀 검사합니다.
-     *
-     * @param value 검증할 파라미터 값
-     * @return SQL/JCR 인젝션 시그니처가 감지되면 true (위험), 정상이면 false (안전)
-     */
-    public static boolean isSqlInjectionAttack(String value) {
-        if (StringUtils.isBlank(value)) {
-            return false;
-        }
-
-        String decoded = safeUrlDecode(value);
-        if (decoded.contains("%")) {
-            decoded = safeUrlDecode(decoded);
-        }
-
-        if (!hasSqlInjectionIndicators(decoded)) {
-            return false;
-        }
-
-        for (Pattern pattern : SQLI_PATTERNS) {
-            if (pattern.matcher(decoded).find()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * 정규식 스캔 전 SQL/JCR 인젝션에 필수적인 특수문자나 공백이 존재하는지 고속으로 사전 판별합니다.
-     *
-     * @param s 검사할 문자열
-     * @return 인젝션 지시 문자가 하나라도 존재하면 true
-     */
-    private static boolean hasSqlInjectionIndicators(String s) {
-        final int len = s.length();
-        for (int i = 0; i < len; i++) {
-            char c = s.charAt(i);
-            if (c == '\'' || c == '"' || c == ';' || c == '-' || c == '/' || c == '*' || c == '#'
-                    || c == '(' || c == ')' || c == '[' || c == ']' || c == '=' || c == '<'
-                    || c == '>' || c == '@' || c == ':' || Character.isWhitespace(c)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * CWE-79: 파라미터 값에 Cross-Site Scripting (XSS) 악성 스크립트 태그 및 이벤트 핸들러 시그니처가 포함되어 있는지 검사합니다.
-     *
-     * @param value 검증할 파라미터 값
-     * @return XSS 공격 시그니처가 감지되면 true (위험), 정상이면 false (안전)
-     */
-    public static boolean isXssAttack(String value) {
-        if (StringUtils.isBlank(value)) {
-            return false;
-        }
-
-        String decoded = safeUrlDecode(value);
-        if (decoded.contains("%")) {
-            decoded = safeUrlDecode(decoded);
-        }
-
-        String normalized = unescapeHtml(decoded);
-
-        boolean hasLt = normalized.indexOf('<') != -1;
-        boolean hasColon = normalized.indexOf(':') != -1;
-        boolean hasEqual = normalized.indexOf('=') != -1;
-        boolean hasParen = normalized.indexOf('(') != -1;
-        boolean hasDot = normalized.indexOf('.') != -1;
-
-        if (!hasLt && !hasColon && !hasEqual && !hasParen && !hasDot) {
-            return false;
-        }
-
-        if (hasLt) {
-            for (Pattern pattern : XSS_TAG_PATTERNS) {
-                if (pattern.matcher(normalized).find()) return true;
-            }
-        }
-        if (hasColon) {
-            for (Pattern pattern : XSS_SCHEME_PATTERNS) {
-                if (pattern.matcher(normalized).find()) return true;
-            }
-        }
-        if (hasEqual) {
-            for (Pattern pattern : XSS_EVENT_PATTERNS) {
-                if (pattern.matcher(normalized).find()) return true;
-            }
-        }
-        if (hasParen) {
-            for (Pattern pattern : XSS_FUNC_PATTERNS) {
-                if (pattern.matcher(normalized).find()) return true;
-            }
-        }
-        if (hasDot) {
-            for (Pattern pattern : XSS_DOM_PATTERNS) {
-                if (pattern.matcher(normalized).find()) return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * HTML 엔티티(&lt;, &#60;, &#x3c; 등)를 원래 문자로 복원하여 엔티티 인코딩 기반 XSS 우회를 방지합니다.
-     *
-     * @param input 원본 문자열
-     * @return HTML 엔티티가 복원된 문자열
-     */
-    private static String unescapeHtml(String input) {
-        if (input == null || input.indexOf('&') == -1) {
-            return input;
-        }
-        String s = input
-                .replace("&lt;", "<")
-                .replace("&LT;", "<")
-                .replace("&gt;", ">")
-                .replace("&GT;", ">")
-                .replace("&quot;", "\"")
-                .replace("&#39;", "'")
-                .replace("&#x27;", "'");
-        if (s.indexOf('#') != -1) {
-            s = HEX_LT_PATTERN.matcher(s).replaceAll("<");
-            s = HEX_GT_PATTERN.matcher(s).replaceAll(">");
-        }
-        return s;
     }
 }

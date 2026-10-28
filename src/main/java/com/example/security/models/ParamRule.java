@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 
 /**
  * 개별 파라미터의 필수 여부(required), 길이 제약조건(minLength, maxLength),
- * 정규식 패턴(pattern), 경로 조작/인젝션/XSS 허용 여부 및 활성화 상태를 정의하는 모델 클래스입니다.
+ * 정규식 패턴(pattern), 경로 조작 허용 여부 및 활성화 상태를 정의하는 모델 클래스입니다.
  */
 public class ParamRule {
 
@@ -32,18 +32,6 @@ public class ParamRule {
      */
     @SerializedName("allowPathTraversal")
     private Boolean allowPathTraversal = false;
-
-    /**
-     * CWE-89: SQL / JCR-SQL2 / XPath 인젝션 구문 허용 여부 (기본값: false 차단)
-     */
-    @SerializedName("allowSqlInjection")
-    private Boolean allowSqlInjection = false;
-
-    /**
-     * CWE-79: Cross-Site Scripting (XSS) 스크립트 태그 및 이벤트 핸들러 허용 여부 (기본값: false 차단)
-     */
-    @SerializedName("allowXss")
-    private Boolean allowXss = false;
 
     private transient Pattern compiledPattern;
 
@@ -208,42 +196,6 @@ public class ParamRule {
     }
 
     /**
-     * 해당 파라미터에 대해 SQL/JCR 인젝션 구문 허용 여부를 반환합니다.
-     *
-     * @return 허용 시 true, 차단 시 false (기본값 false)
-     */
-    public boolean isAllowSqlInjection() {
-        return allowSqlInjection != null && allowSqlInjection;
-    }
-
-    /**
-     * 해당 파라미터에 대해 SQL/JCR 인젝션 구문 허용 여부를 설정합니다.
-     *
-     * @param allowSqlInjection 허용 여부
-     */
-    public void setAllowSqlInjection(Boolean allowSqlInjection) {
-        this.allowSqlInjection = allowSqlInjection;
-    }
-
-    /**
-     * 해당 파라미터에 대해 XSS 스크립트 태그 허용 여부를 반환합니다.
-     *
-     * @return 허용 시 true, 차단 시 false (기본값 false)
-     */
-    public boolean isAllowXss() {
-        return allowXss != null && allowXss;
-    }
-
-    /**
-     * 해당 파라미터에 대해 XSS 스크립트 태그 허용 여부를 설정합니다.
-     *
-     * @param allowXss 허용 여부
-     */
-    public void setAllowXss(Boolean allowXss) {
-        this.allowXss = allowXss;
-    }
-
-    /**
      * 로그 출력을 위해 이 파라미터 규칙의 핵심 제약조건(필수 여부, 길이 범위, 정규식)을 요약 문자열로 반환합니다.
      *
      * @return 파라미터 규칙 요약 문자열
@@ -260,12 +212,6 @@ public class ParamRule {
         }
         if (isAllowPathTraversal()) {
             sb.append(", allowPathTraversal=true");
-        }
-        if (isAllowSqlInjection()) {
-            sb.append(", allowSqlInjection=true");
-        }
-        if (isAllowXss()) {
-            sb.append(", allowXss=true");
         }
         sb.append("}");
         return sb.toString();

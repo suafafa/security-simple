@@ -3,6 +3,7 @@ package com.example.security.filters;
 import com.example.security.models.ParamRule;
 import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
+import com.example.security.registry.EndpointPolicyRegistry;
 import com.example.security.utils.SecurityUtils;
 import com.example.security.validators.MethodPolicyValidator;
 import com.example.security.validators.ParamPolicyValidator;
@@ -44,6 +45,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
@@ -52,7 +54,7 @@ import java.util.regex.Pattern;
  * 3개의 핵심 PolicyValidator 체인을 순차적으로 실행합니다:
  * 1. RefererPolicyValidator: 기본 도메인(abc.com) 및 정책별 허용 Referer(allowedReferrers) 검증
  * 2. MethodPolicyValidator: 허용된 HTTP 메소드 검증 (GET, POST 등)
- * 3. ParamPolicyValidator: 파라미터 필수 여부, 미정의 파라미터 차단, 길이/정규식 패턴 및 Path Traversal/SQLi/XSS 검증
+ * 3. ParamPolicyValidator: 파라미터 필수 여부, 미정의 파라미터 차단, 길이/정규식 패턴 및 Path Traversal 검증
  */
 @Component(
         service = Filter.class,
@@ -109,12 +111,6 @@ public class SecurityFilter implements Filter {
         @AttributeDefinition(name = "Default Policy: Allowed HTTP Methods", description = "Default allowed HTTP methods (e.g. GET, POST)")
         String[] default_methods() default {"GET", "POST"};
 
-        @AttributeDefinition(name = "Default Policy: Block SQL/JCR Injection", description = "Automatically block SQL/JCR2 injection patterns in parameters")
-        boolean default_blockSqlInjection() default true;
-
-        @AttributeDefinition(name = "Default Policy: Block XSS", description = "Automatically block Cross-Site Scripting (XSS) patterns in parameters")
-        boolean default_blockXss() default true;
-
         @AttributeDefinition(name = "Default Policy: Allow Undefined Params", description = "Allow request parameters not explicitly listed in params rules")
         boolean default_allowUndefinedParams() default false;
 
@@ -147,6 +143,11 @@ public class SecurityFilter implements Filter {
     // 동적으로 바인딩된 서블릿 추적 맵 (서블릿 인스턴스 -> OSGi 속성 맵)
     private final Map<Servlet, Map<String, Object>> boundServlets = new ConcurrentHashMap<>();
 
+    // EndpointPolicyRegistry(.cfg.json 번들 설정 수집기) 및 레지스트리 관리 타겟 집합
+    private volatile EndpointPolicyRegistry endpointPolicyRegistry;
+    private final Set<String> registryManagedTargets = ConcurrentHashMap.newKeySet();
+    private final Runnable registryChangeListener = this::syncRegistryPolicies;
+
     // 핵심 3대 정책 검증기 (Referer -> Method -> Param)
     private final RefererPolicyValidator refererPolicyValidator = new RefererPolicyValidator();
     private final MethodPolicyValidator methodPolicyValidator = new MethodPolicyValidator();
@@ -157,6 +158,91 @@ public class SecurityFilter implements Filter {
             methodPolicyValidator,
             paramPolicyValidator
     ));
+
+    /**
+     * 번들별 {@code .cfg.json} 파일들을 수집하는 {@link EndpointPolicyRegistry} 서비스를 동적 바인딩합니다.
+     * 레지스트리가 바인딩되거나 하위 {@code .cfg.json} 파일이 추가·수정·삭제될 때마다 즉시 필터 정책 캐시를 동기화합니다.
+     *
+     * @param registry 바인딩된 {@link EndpointPolicyRegistry} 서비스
+     */
+    @Reference(
+            service = EndpointPolicyRegistry.class,
+            cardinality = ReferenceCardinality.OPTIONAL,
+            policy = ReferencePolicy.DYNAMIC,
+            bind = "bindPolicyRegistry",
+            unbind = "unbindPolicyRegistry"
+    )
+    public void bindPolicyRegistry(final EndpointPolicyRegistry registry) {
+        if (registry == null) {
+            return;
+        }
+        this.endpointPolicyRegistry = registry;
+        registry.addChangeListener(registryChangeListener);
+        syncRegistryPolicies();
+    }
+
+    /**
+     * {@link EndpointPolicyRegistry} 서비스가 언바인딩될 때 호출되며, 레지스트리에서 등록했던 정책들을 해제합니다.
+     *
+     * @param registry 언바인딩된 {@link EndpointPolicyRegistry} 서비스
+     */
+    public void unbindPolicyRegistry(final EndpointPolicyRegistry registry) {
+        if (registry != null) {
+            registry.removeChangeListener(registryChangeListener);
+        }
+        if (this.endpointPolicyRegistry == registry) {
+            this.endpointPolicyRegistry = null;
+        }
+        syncRegistryPolicies();
+    }
+
+    /**
+     * {@link EndpointPolicyRegistry}에 등록된 {@code .cfg.json} 기반 정책들을 현재 {@link ServletSecurityConfig}에 실시간 동기화합니다.
+     * 삭제된 {@code .cfg.json} 정책은 즉시 제거하고, 새로 추가되거나 수정된 정책은 기본 정책({@code defaultPolicy})을 상속받아 반영합니다.
+     */
+    public synchronized void syncRegistryPolicies() {
+        ServletSecurityConfig currentConfig = this.servletSecurityConfig;
+        if (currentConfig == null) {
+            return;
+        }
+
+        // 1. 기존에 레지스트리를 통해 등록되었던 타겟들을 일단 제거
+        for (String oldTarget : registryManagedTargets) {
+            currentConfig.unregisterDynamicPolicy(oldTarget);
+        }
+        registryManagedTargets.clear();
+
+        // 2. 바인딩된 서블릿 어노테이션 기반 정책이 있다면 기본 복원
+        ServletPolicyRule defaultRule = currentConfig.getDefaultPolicy();
+        if (!boundServlets.isEmpty()) {
+            for (Map<String, Object> props : boundServlets.values()) {
+                if (isApplicableServlet(props)) {
+                    List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, defaultRule);
+                    for (ServletPolicyRule rule : rules) {
+                        if (matchesFilterPattern(rule.getTarget())) {
+                            currentConfig.registerDynamicPolicy(rule);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. EndpointPolicyRegistry(.cfg.json)의 정책들을 최우선으로 등록
+        EndpointPolicyRegistry registry = this.endpointPolicyRegistry;
+        if (registry != null) {
+            List<ServletPolicyRule> regRules = registry.getAllPolicies();
+            if (regRules != null) {
+                for (ServletPolicyRule rule : regRules) {
+                    if (rule != null && matchesFilterPattern(rule.getTarget())) {
+                        ServletPolicyRule copy = new ServletPolicyRule();
+                        copy.copyFrom(rule);
+                        currentConfig.registerDynamicPolicy(copy);
+                        registryManagedTargets.add(copy.getTarget().trim());
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * OSGi 컨테이너에서 {@link Servlet} 서비스가 등록될 때 호출되는 동적 바인딩 콜백 메소드입니다.
@@ -188,7 +274,8 @@ public class SecurityFilter implements Filter {
         if (servletSecurityConfig != null) {
             List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(properties, servletSecurityConfig.getDefaultPolicy());
             for (ServletPolicyRule rule : rules) {
-                if (matchesFilterPattern(rule.getTarget())) {
+                if (matchesFilterPattern(rule.getTarget())
+                        && !registryManagedTargets.contains(rule.getTarget().trim())) {
                     servletSecurityConfig.registerDynamicPolicy(rule);
                 }
             }
@@ -219,7 +306,8 @@ public class SecurityFilter implements Filter {
         if (servletSecurityConfig != null && props != null) {
             List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, null);
             for (ServletPolicyRule rule : rules) {
-                if (matchesFilterPattern(rule.getTarget())) {
+                if (matchesFilterPattern(rule.getTarget())
+                        && !registryManagedTargets.contains(rule.getTarget().trim())) {
                     servletSecurityConfig.unregisterDynamicPolicy(rule.getTarget());
                 }
             }
@@ -373,6 +461,7 @@ public class SecurityFilter implements Filter {
                     }
                 }
             }
+            syncRegistryPolicies();
         } catch (Exception e) {
             LOG.error("Failed to compile sling.filter.pattern regex: {}", newPattern, e);
         }
@@ -443,21 +532,10 @@ public class SecurityFilter implements Filter {
             newConfig.init();
             this.servletSecurityConfig = newConfig;
 
-            if (!boundServlets.isEmpty()) {
-                for (Map<String, Object> props : boundServlets.values()) {
-                    if (isApplicableServlet(props)) {
-                        List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, defaultRule);
-                        for (ServletPolicyRule rule : rules) {
-                            if (matchesFilterPattern(rule.getTarget())) {
-                                servletSecurityConfig.registerDynamicPolicy(rule);
-                            }
-                        }
-                    }
-                }
-            }
+            syncRegistryPolicies();
 
             LOG.info("SecurityFilter activated for AEM 6.5. Filter Enabled: {}, Filter Pattern: {}, Active Policies: {}",
-                    enabled, filterPattern, servletSecurityConfig.getPolicies().size());
+                    enabled, filterPattern, servletSecurityConfig.getDynamicPolicies().size());
         } catch (Exception e) {
             handleConfigFailure("OSGi Config", e, isEnabled);
         }
@@ -479,8 +557,6 @@ public class SecurityFilter implements Filter {
             if (config.default_methods() != null && config.default_methods().length > 0) {
                 rule.setMethods(Arrays.asList(config.default_methods()));
             }
-            rule.setBlockSqlInjection(config.default_blockSqlInjection());
-            rule.setBlockXss(config.default_blockXss());
             rule.setAllowUndefinedParams(config.default_allowUndefinedParams());
 
             String[] paramsArray = config.default_params();
@@ -509,6 +585,11 @@ public class SecurityFilter implements Filter {
      */
     @Deactivate
     protected void deactivate() {
+        EndpointPolicyRegistry registry = this.endpointPolicyRegistry;
+        if (registry != null) {
+            registry.removeChangeListener(registryChangeListener);
+        }
+        registryManagedTargets.clear();
         boundServlets.clear();
         LOG.info("SecurityFilter deactivated.");
     }
@@ -753,6 +834,13 @@ public class SecurityFilter implements Filter {
         }
         if ("DEFAULT".equalsIgnoreCase(target.trim())) {
             return "DefaultPolicy(SecurityFilter.config)";
+        }
+        EndpointPolicyRegistry registry = this.endpointPolicyRegistry;
+        if (registry != null) {
+            String regSource = registry.getPolicySource(target);
+            if (StringUtils.isNotBlank(regSource)) {
+                return regSource;
+            }
         }
         for (Map.Entry<Servlet, Map<String, Object>> entry : boundServlets.entrySet()) {
             List<String> targets = extractServletTargets(entry.getValue());

@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "bundle.id": "core-commerce",
+  "policies": [
+    {
+      "target": "/aemapi/order/inquiry",
+      "methods": ["GET", "POST"],
+      "allowedReferrers": ["shop.abc.com"],
+      "params": [
+        "orderId:required:alnum:8..20",
+        "includeHistory:optional:true|false:5"
+      ]
+    },
+    {
+      "target": "/aemapi/order/cancel",
+      "methods": ["POST"],
+      "params": [
+        "orderId:required:alnum:8..20",
+        "cancelReason:required:2..100"
+      ]
+    }
+  ]
+}

@@ -47,7 +47,7 @@ public class UserContactServlet extends SlingAllMethodsServlet {
             throws ServletException, IOException {
 
         // 필터에서 name, email, phone, inquiryType, zipCode 및 공통 파라미터(page 등)에 대해
-        // 필수값, 길이, 정규식, SQLi/XSS 검증이 100% 완료된 안전한 파라미터만 서블릿에 도달합니다.
+        // 필수값, 길이, 정규식, Path Traversal 검증이 100% 완료된 안전한 파라미터만 서블릿에 도달합니다.
         String name = request.getParameter("name");
         String email = request.getParameter("email");
         String phone = request.getParameter("phone");

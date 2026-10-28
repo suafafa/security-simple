@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "bundle.id": "core-member",
+  "policies": [
+    {
+      "target": "/aemapi/user/contact",
+      "methods": ["POST"],
+      "allowedReferrers": ["partner.abc.com"],
+      "params": [
+        "name:required:2..20:korean",
+        "email:required:email:50",
+        "phone:required:phone",
+        "inquiryType:required:tech|billing|general",
+        "zipCode:digits:5"
+      ]
+    },
+    {
+      "target": "/aemapi/user/profile",
+      "methods": ["GET"],
+      "params": [
+        "userId:required:alnum:4..20",
+        "includeDetails:optional:true|false:5"
+      ]
+    }
+  ]
+}

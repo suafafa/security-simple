@@ -12,7 +12,7 @@ public enum SecurityErrorCode {
     // 405 Method Not Allowed (HTTP 메서드 제한)
     METHOD_NOT_ALLOWED(405, "SEC-40501", "Method Not Allowed: %s"),
 
-    // 400 Bad Request (파라미터 제약조건 및 인젝션/XSS 방어)
+    // 400 Bad Request (파라미터 제약조건 및 경로 조작 방어)
     PARAM_REQUIRED(400, "SEC-40001", "Bad Request: Missing required parameter: %s"),
     PARAM_UNDEFINED(400, "SEC-40002", "Bad Request: Parameter [%s] is not permitted"),
     PARAM_TOO_SHORT(400, "SEC-40003", "Bad Request: Parameter [%s] is too short (min: %d)"),
@@ -23,17 +23,7 @@ public enum SecurityErrorCode {
      * CWE-22: Path Traversal / Directory Traversal 방어 에러 코드
      * 파라미터 값에 상위 디렉토리 이동(../, ..\), 2중 URL 인코딩(%252e%252e), 널 바이트(%00) 주입이 감지되었을 때 반환
      */
-    PARAM_PATH_TRAVERSAL(400, "SEC-40007", "Bad Request: Potential Path Traversal attack detected in parameter [%s]"),
-
-    /**
-     * CWE-89: SQL / JCR-SQL2 / XPath Injection 방어 에러 코드
-     */
-    PARAM_SQL_INJECTION(400, "SEC-40008", "Bad Request: Potential SQL/JCR Injection attack detected in parameter [%s]"),
-
-    /**
-     * CWE-79: Cross-Site Scripting (XSS) 방어 에러 코드
-     */
-    PARAM_XSS(400, "SEC-40009", "Bad Request: Potential Cross-Site Scripting (XSS) attack detected in parameter [%s]");
+    PARAM_PATH_TRAVERSAL(400, "SEC-40007", "Bad Request: Potential Path Traversal attack detected in parameter [%s]");
 
     private final int httpStatus;
     private final String subCode;

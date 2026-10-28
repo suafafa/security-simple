@@ -40,12 +40,6 @@ public class ServletPolicyRule {
     @SerializedName("allowUndefinedParams")
     private Boolean allowUndefinedParams;
 
-    @SerializedName(value = "blockSqlInjection", alternate = {"block_sql_injection", "enableSqlInjectionCheck"})
-    private Boolean blockSqlInjection = true;
-
-    @SerializedName(value = "blockXss", alternate = {"block_xss", "enableXssCheck"})
-    private Boolean blockXss = true;
-
     @SerializedName("params")
     private Map<String, ParamRule> params;
 
@@ -413,42 +407,6 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 파라미터 값에 대한 SQL/JCR2 인젝션 패턴 차단 활성화 여부를 반환합니다.
-     *
-     * @return SQL 인젝션 차단이 활성화되어 있으면 true (기본값 true)
-     */
-    public boolean isBlockSqlInjection() {
-        return blockSqlInjection == null || blockSqlInjection;
-    }
-
-    /**
-     * 파라미터 값에 대한 SQL/JCR2 인젝션 패턴 차단 활성화 여부를 설정합니다.
-     *
-     * @param blockSqlInjection SQL 인젝션 차단 여부
-     */
-    public void setBlockSqlInjection(Boolean blockSqlInjection) {
-        this.blockSqlInjection = blockSqlInjection;
-    }
-
-    /**
-     * 파라미터 값에 대한 크로스 사이트 스크립팅(XSS) 패턴 차단 활성화 여부를 반환합니다.
-     *
-     * @return XSS 차단이 활성화되어 있으면 true (기본값 true)
-     */
-    public boolean isBlockXss() {
-        return blockXss == null || blockXss;
-    }
-
-    /**
-     * 파라미터 값에 대한 크로스 사이트 스크립팅(XSS) 패턴 차단 활성화 여부를 설정합니다.
-     *
-     * @param blockXss XSS 차단 여부
-     */
-    public void setBlockXss(Boolean blockXss) {
-        this.blockXss = blockXss;
-    }
-
-    /**
      * 이 정책 규칙에서 특정 검증기(예: "REFERER", "METHOD", "PARAM")가 활성화되어 있는지 확인합니다.
      *
      * @param validatorName 확인할 검증기 이름
@@ -477,14 +435,6 @@ public class ServletPolicyRule {
 
         if ((this.methods == null || this.methods.isEmpty()) && parent.methods != null && !parent.methods.isEmpty()) {
             this.methods = new ArrayList<>(parent.methods);
-        }
-
-        if (this.blockSqlInjection == null && parent.blockSqlInjection != null) {
-            this.blockSqlInjection = parent.blockSqlInjection;
-        }
-
-        if (this.blockXss == null && parent.blockXss != null) {
-            this.blockXss = parent.blockXss;
         }
 
         if (StringUtils.isBlank(this.defaultReferrer) && StringUtils.isNotBlank(parent.defaultReferrer)) {
@@ -526,8 +476,6 @@ public class ServletPolicyRule {
         this.target = other.target;
         this.enabled = other.enabled;
         this.methods = other.methods != null ? new ArrayList<>(other.methods) : null;
-        this.blockSqlInjection = other.blockSqlInjection;
-        this.blockXss = other.blockXss;
         this.defaultReferrer = other.defaultReferrer;
         this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
         this.allowUndefinedParams = other.allowUndefinedParams;
@@ -549,6 +497,11 @@ public class ServletPolicyRule {
         }
 
         List<String> targets = new ArrayList<>();
+        for (String p : extractStringList(props, "security.targets", "targets")) {
+            if (StringUtils.isNotBlank(p) && !targets.contains(p.trim())) {
+                targets.add(p.trim());
+            }
+        }
         for (String p : extractStringList(props, "sling.servlet.paths")) {
             if (StringUtils.isNotBlank(p) && !targets.contains(p.trim())) {
                 targets.add(p.trim());
@@ -573,7 +526,7 @@ public class ServletPolicyRule {
         for (String target : targets) {
             if (StringUtils.isBlank(target)) continue;
             String cleanTarget = target.trim();
-            ServletPolicyRule rule = parseRuleForTarget(props, cleanTarget, targets);
+            ServletPolicyRule rule = parseRuleForTarget(props);
             rule.setTarget(cleanTarget);
             rule.inheritFrom(defaultPolicy);
             rule.init();
@@ -583,132 +536,89 @@ public class ServletPolicyRule {
     }
 
     /**
-     * OSGi 속성으로부터 특정 타겟 경로/resourceType에 대한 {@link ServletPolicyRule}을 파싱합니다.
-     * 서블릿 공통 속성(서블릿의 모든 경로에 적용)과 타겟별 개별 재정의(Override)를 모두 지원합니다.
+     * OSGi 서블릿 속성으로부터 {@link ServletPolicyRule}을 파싱합니다. (브래킷 문법 미사용)
      *
-     * @param props         서블릿의 OSGi 컴포넌트 프로퍼티 맵
-     * @param currentTarget 현재 파싱 중인 타겟 경로 또는 resourceType
-     * @param allTargets    해당 서블릿에 선언된 모든 타겟 목록
+     * @param props 서블릿의 OSGi 컴포넌트 프로퍼티 맵
      * @return 파싱된 {@link ServletPolicyRule} 객체
      */
-    private static ServletPolicyRule parseRuleForTarget(Map<String, Object> props, String currentTarget, List<String> allTargets) {
+    private static ServletPolicyRule parseRuleForTarget(Map<String, Object> props) {
         ServletPolicyRule rule = new ServletPolicyRule();
 
+        // 0. 정책 활성화 여부 및 기본 Referer (Enabled & DefaultReferrer)
+        Boolean enabledVal = extractBoolean(props, "security.enabled", "enabled");
+        if (enabledVal != null) {
+            rule.setEnabled(enabledVal);
+        }
+        List<String> defaultRefs = extractStringList(props, "security.defaultReferrer", "security.defaultReferer", "defaultReferrer", "defaultReferer");
+        if (!defaultRefs.isEmpty()) {
+            rule.setDefaultReferrer(defaultRefs.get(0));
+        }
+
         // 1. 허용 HTTP 메소드 (Methods)
-        List<String> methods = extractTargetStringList(props, currentTarget, allTargets, "security.methods", "methods");
+        List<String> methods = extractStringList(props, "security.methods", "methods");
         if (!methods.isEmpty()) {
             rule.setMethods(methods);
         }
 
         // 2. 허용 Referer 도메인 (Referrers)
-        List<String> allowedReferrers = extractTargetStringList(props, currentTarget, allTargets, "security.allowedReferrers", "allowedReferrers");
+        List<String> allowedReferrers = extractStringList(props, "security.allowedReferrers", "allowedReferrers", "referrers");
         if (!allowedReferrers.isEmpty()) {
             rule.setAllowedReferrers(allowedReferrers);
         }
 
-        // 3. SQLi / XSS 차단 여부
-        Boolean blockSql = extractBoolean(props, "security.blockSqlInjection", "blockSqlInjection");
-        if (blockSql != null) {
-            rule.setBlockSqlInjection(blockSql);
-        }
-        Boolean blockXss = extractBoolean(props, "security.blockXss", "blockXss");
-        if (blockXss != null) {
-            rule.setBlockXss(blockXss);
+        // 3. 미정의 파라미터 허용 여부 (Undefined Params)
+        Boolean allowUndef = extractBoolean(props, "security.allowUndefinedParams", "allowUndefinedParams");
+        if (allowUndef != null) {
+            rule.setAllowUndefinedParams(allowUndef);
         }
 
-        // 4. 미정의 파라미터 허용 여부 (Undefined Params)
-        String allowUndefStr = extractTargetString(props, currentTarget, allTargets, "security.allowUndefinedParams", "allowUndefinedParams");
-        if (StringUtils.isNotBlank(allowUndefStr)) {
-            rule.setAllowUndefinedParams(Boolean.parseBoolean(allowUndefStr.trim()));
-        } else {
-            Boolean allowUndef = extractBoolean(props, "security.allowUndefinedParams", "allowUndefinedParams");
-            if (allowUndef != null) {
-                rule.setAllowUndefinedParams(allowUndef);
-            }
-        }
-
-        // 5. 가능한 모든 설정 형식(공통 + 타겟별)으로부터 파라미터 규칙 통합
+        // 5. 파라미터 규칙 통합
         Map<String, ParamRule> consolidatedParams = new LinkedHashMap<>();
 
-        // 파라미터 (1): JSON 형식 (예: security.params.json 또는 security.params.json[/aemapi/path])
-        String paramsJson = extractTargetString(props, currentTarget, allTargets, "security.params.json", "params.json");
-        if (StringUtils.isNotBlank(paramsJson) && paramsJson.trim().startsWith("{")) {
-            try {
-                java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, ParamRule>>() {}.getType();
-                Map<String, ParamRule> parsedParams = new com.google.gson.Gson().fromJson(paramsJson, mapType);
-                if (parsedParams != null && !parsedParams.isEmpty()) {
-                    consolidatedParams.putAll(parsedParams);
-                }
-            } catch (Exception ignored) {}
-        }
-
-        // 파라미터 (2): 간편 DSL 형식
-        // - 공통: security.params=name:required:2..20
-        // - 경로별: security.params[/aemapi/order/inquiry]=includeHistory:optional:true|false:5 (키에 [경로]를 명시하는 방식만 지원)
-        List<String> rawParamEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, allTargets, "security.params", "security.parameters", "params");
-        if (!rawParamEntries.isEmpty()) {
-            for (String rawSpec : rawParamEntries) {
-                if (StringUtils.isBlank(rawSpec) || rawSpec.trim().startsWith("{")) continue;
-                String[] scoped = splitTargetPrefix(rawSpec, allTargets);
-                String targetPrefix = scoped[0];
-                String specBody = scoped[1];
-                if (targetPrefix == null || targetPrefix.equalsIgnoreCase(currentTarget)) {
-                    List<String> subItems = splitPreservingParens(specBody, ',');
-                    for (String item : subItems) {
-                        Map.Entry<String, ParamRule> entry = parseSimpleParamSpec(item);
-                        if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
-                            consolidatedParams.put(entry.getKey().toLowerCase(), entry.getValue());
-                        }
-                    }
+        // 파라미터 (1): 간편 DSL 배열 형식 (예: security.params=name:required:2..20)
+        List<String> rawParamEntries = new ArrayList<>();
+        rawParamEntries.addAll(extractRawStringsForKey(props, "security.params"));
+        rawParamEntries.addAll(extractRawStringsForKey(props, "security.parameters"));
+        rawParamEntries.addAll(extractRawStringsForKey(props, "params"));
+        for (String rawSpec : rawParamEntries) {
+            if (StringUtils.isBlank(rawSpec) || rawSpec.trim().startsWith("{")) continue;
+            List<String> subItems = splitPreservingParens(rawSpec.trim(), ',');
+            for (String item : subItems) {
+                Map.Entry<String, ParamRule> entry = parseSimpleParamSpec(item);
+                if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
+                    consolidatedParams.put(entry.getKey().toLowerCase(), entry.getValue());
                 }
             }
         }
 
-        // 파라미터 (3): 개별 속성 형식 (예: "security.param.name=required:2..20" 또는 "security.param[/aemapi/path].name=required:2..20")
-        String targetParamPrefix1 = "security.param[" + currentTarget + "].";
-        String targetParamPrefix2 = "param[" + currentTarget + "].";
+        // 파라미터 (2): 개별 속성 형식 (예: "security.param.name=required:2..20")
         for (Map.Entry<String, Object> entry : props.entrySet()) {
             String key = entry.getKey();
             if (key == null || entry.getValue() == null) continue;
-            String sub = null;
             if (key.startsWith("security.param.")) {
-                sub = key.substring("security.param.".length()).trim();
-            } else if (key.startsWith(targetParamPrefix1)) {
-                sub = key.substring(targetParamPrefix1.length()).trim();
-            } else if (key.startsWith(targetParamPrefix2)) {
-                sub = key.substring(targetParamPrefix2.length()).trim();
-            }
-            if (StringUtils.isNotBlank(sub)) {
-                if (sub.endsWith(".pattern") || sub.endsWith(".regex")) {
-                    String realName = sub.substring(0, sub.lastIndexOf('.')).trim();
-                    if (!realName.isEmpty()) {
-                        ParamRule pr = consolidatedParams.getOrDefault(realName.toLowerCase(), new ParamRule());
-                        pr.setPattern(entry.getValue().toString().trim());
-                        consolidatedParams.put(realName.toLowerCase(), pr);
-                    }
-                } else {
-                    String valStr = entry.getValue().toString().trim();
-                    if (!isLegacyTargetScopedValue(valStr, allTargets)) {
+                String sub = key.substring("security.param.".length()).trim();
+                if (StringUtils.isNotBlank(sub)) {
+                    if (sub.endsWith(".pattern") || sub.endsWith(".regex")) {
+                        String realName = sub.substring(0, sub.lastIndexOf('.')).trim();
+                        if (!realName.isEmpty()) {
+                            ParamRule pr = consolidatedParams.getOrDefault(realName.toLowerCase(), new ParamRule());
+                            pr.setPattern(entry.getValue().toString().trim());
+                            consolidatedParams.put(realName.toLowerCase(), pr);
+                        }
+                    } else {
+                        String valStr = entry.getValue().toString().trim();
                         String spec = sub + ":" + valStr;
                         Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(spec);
                         if (parsed != null && StringUtils.isNotBlank(parsed.getKey())) {
-                            ParamRule existing = consolidatedParams.get(parsed.getKey().toLowerCase());
-                            if (existing != null) {
-                                if (parsed.getValue().getPattern() != null) existing.setPattern(parsed.getValue().getPattern());
-                                if (parsed.getValue().isRequired()) existing.setRequired(true);
-                                if (parsed.getValue().getMinLength() != null) existing.setMinLength(parsed.getValue().getMinLength());
-                                if (parsed.getValue().getMaxLength() != null) existing.setMaxLength(parsed.getValue().getMaxLength());
-                            } else {
-                                consolidatedParams.put(parsed.getKey().toLowerCase(), parsed.getValue());
-                            }
+                            consolidatedParams.put(parsed.getKey().toLowerCase(), parsed.getValue());
                         }
                     }
                 }
             }
         }
 
-        // 파라미터 (4): 단순 필수 파라미터 목록 (예: "security.requiredParams")
-        List<String> requiredParams = extractTargetStringList(props, currentTarget, allTargets, "security.requiredParams", "requiredParams");
+        // 파라미터 (3): 단순 필수 파라미터 목록 (예: "security.requiredParams")
+        List<String> requiredParams = extractStringList(props, "security.requiredParams", "requiredParams");
         if (!requiredParams.isEmpty()) {
             for (String rp : requiredParams) {
                 ParamRule pr = consolidatedParams.getOrDefault(rp.toLowerCase(), new ParamRule());
@@ -722,97 +632,6 @@ public class ServletPolicyRule {
         }
 
         return rule;
-    }
-
-    /**
-     * 설정 문자열에서 대괄호 기반 타겟 경로 접두사(예: {@code [/aemapi/path]value})와
-     * 실제 설정 본문을 분리합니다. ({@code /aemapi/path:value} 형식은 지원하지 않으며 {@code security.params[/aemapi/path]=...} 방식만 지원합니다.)
-     *
-     * @param rawValue   원본 설정 문자열
-     * @param allTargets 서블릿의 전체 타겟 목록
-     * @return 길이 2의 배열 {@code [타겟 접두사(없으면 null), 설정 본문]}
-     */
-    private static String[] splitTargetPrefix(String rawValue, List<String> allTargets) {
-        if (rawValue == null) {
-            return new String[]{null, ""};
-        }
-        String trimmed = rawValue.trim();
-        if (trimmed.startsWith("[") && trimmed.indexOf(']') > 1) {
-            int closeIdx = trimmed.indexOf(']');
-            String target = trimmed.substring(1, closeIdx).trim();
-            String rest = trimmed.substring(closeIdx + 1).trim();
-            if (rest.startsWith(":")) {
-                rest = rest.substring(1).trim();
-            }
-            return new String[]{target, rest};
-        }
-        return new String[]{null, trimmed};
-    }
-
-    /**
-     * OSGi 프로퍼티 맵에서 기본 키 및 대괄호 타겟 키({@code key[target]})에 해당하는 문자열 항목들을 모두 추출합니다.
-     *
-     * @param props         OSGi 프로퍼티 맵
-     * @param currentTarget 현재 타겟 경로
-     * @param allTargets    서블릿의 전체 타겟 목록
-     * @param baseKeys      검색할 기본 프로퍼티 키 목록
-     * @return 추출된 원본 문자열 리스트
-     */
-    private static List<String> extractRawStringEntriesWithTargetKeys(Map<String, Object> props, String currentTarget, List<String> allTargets, String... baseKeys) {
-        List<String> rawEntries = new ArrayList<>();
-        for (String k : baseKeys) {
-            for (String val : extractRawStringsForKey(props, k)) {
-                // 레거시 "target:paramSpec" 및 "[target]paramSpec" 형식은 무시하고 순수 공통 설정만 반영
-                if (!isLegacyTargetScopedValue(val, allTargets)) {
-                    rawEntries.add(val);
-                }
-            }
-            if (StringUtils.isNotBlank(currentTarget)) {
-                String shortKey = k.startsWith("security.") ? k.substring("security.".length()) : k;
-                for (String tk : Arrays.asList(
-                        k + "[" + currentTarget + "]",
-                        shortKey + "[" + currentTarget + "]")) {
-                    for (String val : extractRawStringsForKey(props, tk)) {
-                        rawEntries.add("[" + currentTarget + "]" + val);
-                    }
-                }
-            }
-        }
-        return rawEntries;
-    }
-
-    /**
-     * 레거시 방식인 값 내부에 타겟 접두사를 포함하는 형태(예: {@code /aemapi/path:paramName:...} 또는 {@code [/aemapi/path]paramName:...})인지 판별합니다.
-     * 타겟별 설정은 오직 프로퍼티 키에 대괄호를 명시하는 {@code security.params[/aemapi/path]=...} 형식만 지원합니다.
-     *
-     * @param rawValue   검사할 설정값 문자열
-     * @param allTargets 서블릿의 전체 타겟 목록
-     * @return 레거시 타겟 접두사 형식이면 true
-     */
-    private static boolean isLegacyTargetScopedValue(String rawValue, List<String> allTargets) {
-        if (StringUtils.isBlank(rawValue)) {
-            return false;
-        }
-        String trimmed = rawValue.trim();
-        if (trimmed.startsWith("[") && trimmed.indexOf(']') > 1) {
-            return true;
-        }
-        if (trimmed.startsWith("/") && trimmed.indexOf(':') > 1) {
-            return true;
-        }
-        if (allTargets != null) {
-            for (String t : allTargets) {
-                if (StringUtils.isNotBlank(t)) {
-                    String cleanT = t.trim();
-                    if (trimmed.regionMatches(true, 0, cleanT, 0, cleanT.length())
-                            && trimmed.length() > cleanT.length()
-                            && trimmed.charAt(cleanT.length()) == ':') {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
     }
 
     /**
@@ -845,74 +664,6 @@ public class ServletPolicyRule {
             }
         }
         return list;
-    }
-
-    /**
-     * 특정 타겟에 해당하는 문자열 리스트 설정을 추출합니다.
-     * 타겟 전용 설정이 존재하면 공통 설정보다 우선 적용합니다.
-     *
-     * @param props         OSGi 프로퍼티 맵
-     * @param currentTarget 현재 타겟 경로
-     * @param allTargets    서블릿의 전체 타겟 목록
-     * @param keys          검색할 프로퍼티 키 목록
-     * @return 추출된 문자열 리스트
-     */
-    private static List<String> extractTargetStringList(Map<String, Object> props, String currentTarget, List<String> allTargets, String... keys) {
-        List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, allTargets, keys);
-        List<String> targetSpecific = new ArrayList<>();
-        List<String> common = new ArrayList<>();
-
-        for (String raw : rawEntries) {
-            String[] scoped = splitTargetPrefix(raw, allTargets);
-            String targetPrefix = scoped[0];
-            String body = scoped[1];
-            if (StringUtils.isBlank(body)) continue;
-
-            if (targetPrefix != null) {
-                if (targetPrefix.equalsIgnoreCase(currentTarget)) {
-                    for (String part : body.split(",")) {
-                        if (StringUtils.isNotBlank(part)) targetSpecific.add(part.trim());
-                    }
-                }
-            } else {
-                for (String part : body.split(",")) {
-                    if (StringUtils.isNotBlank(part)) common.add(part.trim());
-                }
-            }
-        }
-        return !targetSpecific.isEmpty() ? targetSpecific : common;
-    }
-
-    /**
-     * 특정 타겟에 해당하는 단일 문자열 설정을 추출합니다.
-     * 타겟 전용 설정이 존재하면 공통 설정보다 우선 적용합니다.
-     *
-     * @param props         OSGi 프로퍼티 맵
-     * @param currentTarget 현재 타겟 경로
-     * @param allTargets    서블릿의 전체 타겟 목록
-     * @param keys          검색할 프로퍼티 키 목록
-     * @return 추출된 문자열 (없으면 null)
-     */
-    private static String extractTargetString(Map<String, Object> props, String currentTarget, List<String> allTargets, String... keys) {
-        List<String> rawEntries = extractRawStringEntriesWithTargetKeys(props, currentTarget, allTargets, keys);
-        String targetSpecific = null;
-        String common = null;
-
-        for (String raw : rawEntries) {
-            String[] scoped = splitTargetPrefix(raw, allTargets);
-            String targetPrefix = scoped[0];
-            String body = scoped[1];
-            if (StringUtils.isBlank(body)) continue;
-
-            if (targetPrefix != null) {
-                if (targetPrefix.equalsIgnoreCase(currentTarget)) {
-                    targetSpecific = body;
-                }
-            } else if (common == null) {
-                common = body;
-            }
-        }
-        return targetSpecific != null ? targetSpecific : common;
     }
 
     /**
@@ -1112,6 +863,114 @@ public class ServletPolicyRule {
     }
 
     /**
+     * 번들별 {@code .cfg.json}의 {@code policies} 배열 내 단일 JSON 정책 객체({@code Map}, {@code JsonObject}, 또는 JSON 문자열)를
+     * 파싱하여 {@link ServletPolicyRule} 리스트를 생성합니다.
+     * <p>
+     * 지원 JSON 구조 예시:
+     * <pre>
+     * {
+     *   "target": "/aemapi/user/contact",
+     *   "methods": ["POST"],
+     *   "allowedReferrers": ["partner.abc.com"],
+     *   "params": [
+     *     "name:required:2..20:korean",
+     *     "email:required:email:50",
+     *     "inquiryType:required:tech|billing|general"
+     *   ]
+     * }
+     * </pre>
+     *
+     * @param entryObj      {@code policies} 배열의 개별 요소 (Map, JsonElement, 또는 JSON String)
+     * @param defaultPolicy 상속할 기본 정책 규칙 (없으면 null)
+     * @return 파싱 및 초기화된 {@link ServletPolicyRule} 리스트
+     */
+    @SuppressWarnings("unchecked")
+    public static List<ServletPolicyRule> fromPolicyJsonEntry(final Object entryObj, final ServletPolicyRule defaultPolicy) {
+        if (entryObj == null) {
+            return Collections.emptyList();
+        }
+
+        Map<String, Object> map = null;
+        if (entryObj instanceof Map<?, ?>) {
+            map = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) entryObj).entrySet()) {
+                if (e.getKey() != null) {
+                    map.put(e.getKey().toString(), e.getValue());
+                }
+            }
+        } else if (entryObj instanceof JsonElement) {
+            JsonElement el = (JsonElement) entryObj;
+            if (el.isJsonObject()) {
+                java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
+                map = new com.google.gson.Gson().fromJson(el, mapType);
+            }
+        } else if (entryObj instanceof String) {
+            String trimmed = ((String) entryObj).trim();
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                try {
+                    java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
+                    map = new com.google.gson.Gson().fromJson(trimmed, mapType);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        if (map == null || map.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> targets = extractStringList(map, "target", "targets", "path", "paths", "sling.servlet.paths", "resourceType", "resourceTypes");
+        if (targets.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<ServletPolicyRule> result = new ArrayList<>(targets.size());
+        for (String t : targets) {
+            if (StringUtils.isBlank(t)) {
+                continue;
+            }
+            ServletPolicyRule rule = parseRuleForTarget(map);
+            rule.setTarget(t.trim());
+
+            // params가 JSON 객체({"name": {"required": true, ...}} 또는 {"name": "required:2..20"})로 주어진 경우 추가 지원
+            Object rawParams = map.get("params");
+            if (rawParams instanceof Map<?, ?>) {
+                Map<String, ParamRule> paramMap = new LinkedHashMap<>(rule.getParams());
+                for (Map.Entry<?, ?> pe : ((Map<?, ?>) rawParams).entrySet()) {
+                    if (pe.getKey() == null || pe.getValue() == null) continue;
+                    String pName = pe.getKey().toString().trim();
+                    Object pVal = pe.getValue();
+                    if (pVal instanceof String) {
+                        Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(pName + ":" + pVal.toString().trim());
+                        if (parsed != null) {
+                            paramMap.put(pName.toLowerCase(), parsed.getValue());
+                        }
+                    } else if (pVal instanceof Map<?, ?>) {
+                        try {
+                            String json = new com.google.gson.Gson().toJson(pVal);
+                            ParamRule pr = new com.google.gson.Gson().fromJson(json, ParamRule.class);
+                            if (pr != null) {
+                                pr.init();
+                                paramMap.put(pName.toLowerCase(), pr);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                if (!paramMap.isEmpty()) {
+                    rule.setParams(paramMap);
+                }
+            }
+
+            rule.inheritFrom(defaultPolicy);
+            rule.init();
+            result.add(rule);
+        }
+
+        return result;
+    }
+
+    /**
      * 해당 서블릿/타겟에 적용된 보안 설정 정보(Method, Referer, Param)를 사람이 읽기 쉬운 요약 문자열로 반환합니다.
      *
      * @return 현재 보안 정책 설정 요약 문자열
@@ -1126,8 +985,6 @@ public class ServletPolicyRule {
             refs.addAll(getAllowedReferrers());
             sb.append(", allowedReferrers=").append(refs);
         }
-        sb.append(", blockSqlInjection=").append(isBlockSqlInjection());
-        sb.append(", blockXss=").append(isBlockXss());
         sb.append(", allowUndefinedParams=").append(isAllowUndefinedParams());
 
         Map<String, ParamRule> pMap = getParams();

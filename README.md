@@ -22,7 +22,7 @@ AEM 6.5 서블릿을 위한 **경량 보안 필터(`SecurityFilter`)** 프로젝
 | :---: | :--- | :---: | :--- | :--- |
 | **1** | `RefererPolicyValidator` | `REFERER` | 요청 `Referer` 헤더가 기본 허용 도메인(`default.referrer`) 또는 서블릿의 `security.allowedReferrers`와 일치하는지 검증 | `403 Forbidden` (`SEC-40303`) |
 | **2** | `MethodPolicyValidator` | `METHOD` | 요청 HTTP Method(`GET`, `POST` 등)가 허용된 `security.methods` 목록에 포함되는지 검증 | `405 Method Not Allowed` (`SEC-40501`) |
-| **3** | `ParamPolicyValidator` | `PARAM` | 필수 여부(`required`), 미정의 파라미터 차단(`allowUndefinedParams=false`), Path Traversal(`SEC-40007`), SQL/JCR 인젝션(`SEC-40008`), XSS(`SEC-40009`), 길이(`min..max`), 정규식(`pattern`) 검증 | `400 Bad Request` (`SEC-40001` ~ `SEC-40009`) |
+| **3** | `ParamPolicyValidator` | `PARAM` | 필수 여부(`required`), 미정의 파라미터 차단(`allowUndefinedParams=false`), Path Traversal(`SEC-40007`), 길이(`min..max`), 정규식(`pattern`) 검증 | `400 Bad Request` (`SEC-40001` ~ `SEC-40007`) |
 
 ---
 
@@ -60,7 +60,7 @@ sequenceDiagram
     Filter->>Chain: 3. 3대 검증기 순차 실행 (Referer -> Method -> Param)
     Chain->>Chain: ① RefererPolicyValidator (도메인 검증 -> 위반 시 403)
     Chain->>Chain: ② MethodPolicyValidator (HTTP 메서드 검증 -> 위반 시 405)
-    Chain->>Chain: ③ ParamPolicyValidator (필수/길이/SQLi/XSS -> 위반 시 400)
+    Chain->>Chain: ③ ParamPolicyValidator (필수/길이/정규식/PathTraversal -> 위반 시 400)
 
     alt 모든 검증 통과 (PASS)
         Chain-->>Filter: 검증 성공
@@ -74,7 +74,7 @@ sequenceDiagram
 ### 2-1. 기동 및 설정 로드 관점 (`activate`)
 OSGi 프레임워크가 컴포넌트를 활성화(`@Activate`)하거나 설정 변경(`@Modified`) 시 호출합니다:
 1. **필터 대상 패턴 사전 컴파일**: `config.sling_filter_pattern()`(기본값: `(/aemapi/.*|/sysapi/.*)`)을 `Pattern.compile()`로 메모리에 캐싱하여 런타임 정규식 컴파일 부하를 제거합니다. 패턴 변경 시 기존 서블릿을 재평가하여 미일치 정책을 자동 해제합니다.
-2. **전역 기본 정책(`defaultPolicy`) 생성**: `config`의 `default.*` 속성을 바탕으로 베이스라인 `ServletPolicyRule`을 생성합니다 (기본 도메인 `abc.com`, 메서드 `GET, POST`, SQLi/XSS 자동 차단, 공통 파라미터 `page, size, sort, keyword` 등).
+2. **전역 기본 정책(`defaultPolicy`) 생성**: `config`의 `default.*` 속성을 바탕으로 베이스라인 `ServletPolicyRule`을 생성합니다 (기본 도메인 `abc.com`, 메서드 `GET, POST`, 공통 파라미터 `page, size, sort, keyword` 등).
 3. **검증기 온/오프 토글 반영**: `config.validator_*_enabled()` 플래그를 읽어 필요 시 전역 수준에서 특정 검증기를 On/Off합니다.
 4. **바인딩된 서블릿들과의 동기화**: 필터보다 먼저 등록되어 대기 중이던 서블릿(`boundServlets`)이 있다면, 새로 로드된 `defaultPolicy`를 즉시 상속시켜 보안 정책을 갱신합니다.
 
@@ -88,7 +88,7 @@ OSGi 프레임워크가 컴포넌트를 활성화(`@Activate`)하거나 설정 �
 3. **3대 검증기 순차 실행 (Fail-Fast 체인)**:
    - **① `RefererPolicyValidator`**: 신뢰 도메인 확인 (`403 Forbidden` / `SEC-40301`)
    - **② `MethodPolicyValidator`**: 허용 HTTP Method 확인 (`405 Method Not Allowed` / `SEC-40501`)
-   - **③ `ParamPolicyValidator`**: 필수값, 미정의 파라미터, 길이, 정규식, SQLi, XSS, Path Traversal 검증 (`400 Bad Request` / `SEC-40001` ~ `SEC-40009`)
+   - **③ `ParamPolicyValidator`**: 필수값, 미정의 파라미터, 길이, 정규식, Path Traversal 검증 (`400 Bad Request` / `SEC-40001` ~ `SEC-40007`)
 4. **결과 처리**:
    - **통과 시**: `chain.doFilter(request, response)`를 호출하여 대상 서블릿 비즈니스 로직을 정상 실행합니다.
    - **위반 시**: 서블릿 실행을 즉각 중단하고, `writeViolationResponse`를 통해 규격화된 에러 JSON과 HTTP 상태 코드를 클라이언트에 즉시 응답합니다.
@@ -134,8 +134,6 @@ classDiagram
         +String defaultReferrer
         +List~String~ allowedReferrers
         +Boolean allowUndefinedParams
-        +Boolean blockSqlInjection
-        +Boolean blockXss
         +Map~String, ParamRule~ params
         +inheritFrom(defaultPolicy)
         +matches(request) boolean
@@ -149,8 +147,6 @@ classDiagram
         +String pattern
         +Pattern compiledPattern
         +String type
-        +Boolean allowSqlInjection
-        +Boolean allowXss
         +Boolean allowPathTraversal
         +validateValue(name, value) ValidationResult
     }
@@ -177,8 +173,8 @@ classDiagram
 | :--- | :--- | :--- | :--- |
 | **`SecurityFilter`**<br>(루트 필터) | • 필터 전체 활성화 여부(`enabled`)<br>• 필터 정규식(`sling.filter.pattern`)<br>• 바인딩된 서블릿 추적 캐시(`boundServlets`)<br>• 3대 검증기 인스턴스 체인 | OSGi Configuration Admin<br>(`SecurityFilter.config`) | Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할을 수행하며, 서블릿 동적 바인딩을 감지 |
 | **`ServletSecurityConfig`**<br>(전체 정책 컨테이너) | • 전역 기본 정책(`defaultPolicy`)<br>• 서블릿별 보안 정책 컬렉션(`policies`)<br>• O(1) 고속 매칭 인덱스(`dynamicExactUriMap`, `dynamicResourceTypeMap`)<br>• 검증기 On/Off 상태 맵 | `SecurityFilter.config` +<br>동적 바인딩 서블릿 프로퍼티 | 요청 인입 시 6단계 우선순위(URI 정확 일치 → ResourceType → 정규식 패턴 → DefaultPolicy)로 O(1) 고속 탐색 |
-| **`ServletPolicyRule`**<br>(타겟별 보안 정책) | • 타겟 식별자(`target`: 경로 또는 resourceType)<br>• 허용 HTTP 메서드 화이트리스트(`methods`)<br>• 허용 Referer 목록(`allowedReferrers`)<br>• SQLi/XSS 차단 플래그<br>• 미정의 파라미터 허용 여부(`allowUndefinedParams`)<br>• 파라미터 검증 맵(`params`) | 서블릿 `@Component`<br>`security.*` 프로퍼티 | `inheritFrom(defaultPolicy)`를 통해 서블릿에 선언되지 않은 기본값 및 공통 파라미터(`default.params`)를 자동 상속/병합 |
-| **`ParamRule`**<br>(파라미터 검증 단위) | • 파라미터명(`name`)<br>• 필수 여부(`required`)<br>• 길이 제약(`minLength`, `maxLength`)<br>• 사전 컴파일된 정규식(`compiledPattern`)<br>• 타입 별칭(`digits`, `alnum`, `email` 등)<br>• 예외 플래그(`allowSqlInjection` 등) | 서블릿 `security.params` DSL<br>또는 JSON 속성 | 인입 파라미터의 값 하나하나에 대해 타입, 길이, 정규식, SQLi/XSS/PathTraversal 공격 구문을 정밀 검증 |
+| **`ServletPolicyRule`**<br>(타겟별 보안 정책) | • 타겟 식별자(`target`: 경로 또는 resourceType)<br>• 허용 HTTP 메서드 화이트리스트(`methods`)<br>• 허용 Referer 목록(`allowedReferrers`)<br>• 미정의 파라미터 허용 여부(`allowUndefinedParams`)<br>• 파라미터 검증 맵(`params`) | 번들별 `.cfg.json` (`EndpointPolicyRegistry`)<br>또는 서블릿 `@Component` | `inheritFrom(defaultPolicy)`를 통해 서블릿에 선언되지 않은 기본값 및 공통 파라미터(`default.params`)를 자동 상속/병합 |
+| **`ParamRule`**<br>(파라미터 검증 단위) | • 파라미터명(`name`)<br>• 필수 여부(`required`)<br>• 길이 제약(`minLength`, `maxLength`)<br>• 사전 컴파일된 정규식(`compiledPattern`)<br>• 타입 별칭(`digits`, `alnum`, `email` 등)<br>• 예외 플래그(`allowPathTraversal`) | `params` DSL 배열<br>또는 JSON 속성 | 인입 파라미터의 값 하나하나에 대해 타입, 길이, 정규식, PathTraversal 공격 구문을 정밀 검증 |
 | **`ValidationResult`**<br>(검증 결과 DTO) | • 검증 성공 여부(`valid`)<br>• HTTP 응답 상태 코드(`400`, `403`, `405`)<br>• 표준 에러 서브코드(`SEC-40001` ~ `SEC-40501`)<br>• 에러 메시지 및 상세 차단 원인(`BlockedByConfig`) | 각 `PolicyValidator` 검증 실행 시 반환 | 검증 실패 시 상위 필터로 차단 사유를 전달하여 즉각적인 Fail-Fast JSON 응답 생성 |
 
 ---
@@ -192,17 +188,15 @@ classDiagram
   └─ defaultPolicy (ServletPolicyRule)
        ├─ methods = [GET, POST]
        ├─ defaultReferrer = "abc.com"
-       ├─ blockSqlInjection = true, blockXss = true
        ├─ allowUndefinedParams = false
        └─ params = {page: ParamRule, size: ParamRule, sort: ParamRule, ...}
             │
             │  inheritFrom(defaultPolicy) 자동 상속
             ▼
-[개별 서블릿: @Component property]
+[번들별 .cfg.json (EndpointPolicyConfig) 또는 개별 서블릿]
   └─ 서블릿 정책 (ServletPolicyRule: target="/aemapi/member/register")
        ├─ methods = [POST]                   <-- 서블릿 개별 설정으로 재정의 (Override)
        ├─ defaultReferrer = "abc.com"        <-- defaultPolicy 값 상속
-       ├─ blockSqlInjection = true, ...      <-- defaultPolicy 값 상속
        ├─ allowUndefinedParams = false       <-- defaultPolicy 값 상속
        └─ params = {
             page: ParamRule, size: ParamRule <-- defaultPolicy의 기본 파라미터 자동 상속!
@@ -225,8 +219,6 @@ validator.param.enabled=B"true"
 default.enabled=B"true"
 default.referrer="abc.com"
 default.methods=["GET","POST"]
-default.blockSqlInjection=B"true"
-default.blockXss=B"true"
 default.allowUndefinedParams=B"false"
 default.params=[ \
   "page:optional:digits:5", \
@@ -256,7 +248,7 @@ default.ignoreServletPolicies=B"false"
 | **① 최소~최대 길이 동시 지정 (`min..max`)** | `"security.params=userId:required:alnum:4..20"` | 4자 이상 ~ 20자 이하 (`minLength=4, maxLength=20`) | 4자 미만: `SEC-40003`<br>20자 초과: `SEC-40004` |
 | **② 최대 길이만 지정 (`숫자` 또는 `max:숫자`)** | `"security.params=title:required:50"`<br>`"security.params=title:required:max:50"` | 최소 길이 제한 없음, 최대 50자 이하 (`minLength=null, maxLength=50`) | 50자 초과: `SEC-40004` |
 | **③ 최소 길이만 지정 (`min:숫자`)** | `"security.params=feedback:required:min:10"` | 최소 10자 이상, 최대 길이 제한 없음 (`minLength=10, maxLength=null`) | 10자 미만: `SEC-40003` |
-| **④ 패턴 없이 길이만 제한 (자유 텍스트)** | `"security.params=message:required:10..500"`<br>`"security.params=keyword:optional:100"` | 정규식(`pattern`) 없이 글자 수만 제한 (단, SQLi/XSS/PathTraversal은 기본 차단됨) | `SEC-40003` / `SEC-40004` |
+| **④ 패턴 없이 길이만 제한 (자유 텍스트)** | `"security.params=message:required:10..500"`<br>`"security.params=keyword:optional:100"` | 정규식(`pattern`) 없이 글자 수만 제한 (단, PathTraversal은 기본 차단됨) | `SEC-40003` / `SEC-40004` |
 | **⑤ 길이 지정 생략 (`min/maxLength` 미지정)** | `"security.params=deptCode:required:alpha"` | `minLength=null, maxLength=null`로 길이 검사를 생략하고 영문자 정규식만 검사 | 형식 불일치: `SEC-40005` |
 
 ---
@@ -350,43 +342,41 @@ public class CouponIssueServlet extends SlingAllMethodsServlet { ... }
 
 ---
 
-### Case 4. 한 서블릿에서 여러 경로(`sling.servlet.paths`)를 처리할 때 경로별 차등 설정 케이스
+### Case 4. 번들별 `.cfg.json` 파일(`EndpointPolicyConfig`)에서 서블릿 경로별 배열 형태로 설정하는 케이스
 
-하나의 서블릿이 조회(`/inquiry`)와 취소(`/cancel`) 등 여러 경로를 동시에 처리하는 경우, **`경로:파라미터규칙`** 또는 **`[경로]파라미터규칙`** 접두사를 붙여 경로마다 서로 다른 HTTP Method와 파라미터 규칙을 지정할 수 있습니다.
+특정 `config` 폴더에 `com.example.security.registry.EndpointPolicyConfig~<번들명>.cfg.json` 파일을 배치하면, `EndpointPolicyRegistryImpl`이 등록된 파일들을 실시간으로 감지하여 서블릿 경로(`target`)별 보안 정책을 등록합니다:
 
-```java
-@Component(
-    service = Servlet.class,
-    property = {
-        "sling.servlet.paths=/aemapi/order/inquiry",
-        "sling.servlet.paths=/aemapi/order/cancel",
-
-        // 1. 경로별 허용 HTTP Method 분리
-        "security.methods=/aemapi/order/inquiry:GET",
-        "security.methods=/aemapi/order/cancel:POST",
-
-        // 2. 경로별 허용 Referer 분리 (생략된 경로는 기본 abc.com 적용)
-        "security.allowedReferrers=/aemapi/order/cancel:pay.abc.com",
-
-        // 3. [공통 파라미터] 경로 접두사가 없으면 서블릿의 모든 경로(/inquiry, /cancel)에 공통 적용
-        "security.params=orderId:required:pattern(^ORD_[0-9]{3,10}$):15",
-
-        // 4. [경로 전용 파라미터] 특정 경로에만 적용되는 파라미터 규칙
-        "security.params=/aemapi/order/inquiry:includeHistory:optional:true|false:5",
-        "security.params=/aemapi/order/cancel:cancelReason:required:2..200",
-        "security.params=/aemapi/order/cancel:refundAccount:optional:digits:10..16"
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-commerce",
+  "policies": [
+    {
+      "target": "/aemapi/order/inquiry",
+      "methods": ["GET", "POST"],
+      "allowedReferrers": ["shop.abc.com"],
+      "params": [
+        "orderId:required:alnum:8..20",
+        "includeHistory:optional:true|false:5"
+      ]
+    },
+    {
+      "target": "/aemapi/order/cancel",
+      "methods": ["POST"],
+      "params": [
+        "orderId:required:alnum:8..20",
+        "cancelReason:required:2..100"
+      ]
     }
-)
-public class MultiPathOrderServlet extends SlingAllMethodsServlet { ... }
+  ]
+}
 ```
-
-> **참고**: `sling.servlet.resourceTypes`를 여러 개 사용하는 서블릿에서도 동일하게 `"security.params=myproject/components/product/review:rating:required:1|2|3|4|5"` 형태로 리소스 타입별 분리가 가능합니다.
 
 ---
 
-### Case 5. 다양한 프로퍼티 선언 스타일 (개별 키 분리 / 단순 필수 목록 / JSON 예외 허용)
+### Case 5. 다양한 프로퍼티 선언 스타일 (개별 키 분리 / 단순 필수 목록)
 
-기본 `security.params` DSL 배열 외에도 상황에 따라 아래 3가지 방식을 혼용할 수 있습니다:
+기본 `params` DSL 배열 외에도 상황에 따라 아래 방식을 사용할 수 있습니다:
 
 #### 5-1. 파라미터별 개별 프로퍼티 키로 분리 선언 (`security.param.<이름>`)
 파라미터가 많거나 정규식이 길어서 별도 줄로 분리하고 싶을 때 유용합니다:
@@ -411,20 +401,6 @@ property = {
 }
 ```
 
-#### 5-3. 특정 파라미터에 SQLi / XSS / PathTraversal 예외 허용이 필요한 경우 (`security.params.json`)
-에디터 리치 텍스트(HTML 본문)나 파일 경로 파라미터처럼 특정 파라미터에만 보안 필터 예외(`allowXss`, `allowSqlInjection`, `allowPathTraversal`)를 열어야 할 때는 `security.params.json`을 사용합니다:
-```java
-property = {
-    "sling.servlet.paths=/aemapi/cms/article/save",
-    "security.methods=POST",
-    "security.params.json={"
-        + "\"title\": {\"required\": true, \"minLength\": 2, \"maxLength\": 100},"
-        + "\"htmlContent\": {\"required\": true, \"maxLength\": 10000, \"allowXss\": true},"
-        + "\"templatePath\": {\"required\": false, \"maxLength\": 200, \"allowPathTraversal\": false}"
-        + "}"
-}
-```
-
 ---
 
 ### Case 6. 미정의 파라미터 허용(`allowUndefinedParams`) 및 기본 정책(`default.params`) 상속 케이스
@@ -434,7 +410,7 @@ property = {
    - 만약 서블릿에서 `"security.params=keyword:required:2..50"`을 선언하면 기본 정책의 `keyword:optional:100` 대신 **서블릿에 선언한 규칙이 우선 적용(Override)**됩니다.
 2. **정의되지 않은 파라미터 허용 (`security.allowUndefinedParams=true`)**:
    - 기본값은 `false`(화이트리스트에 없는 파라미터가 1개라도 들어오면 `SEC-40002` 차단)입니다.
-   - 외부 웹훅 수신이나 가변 파라미터를 받는 서블릿의 경우 `security.allowUndefinedParams=true`로 설정하면 미정의 파라미터도 허용하되, **유입되는 모든 미정의 파라미터 값에 대해서도 Path Traversal / SQLi / XSS 검사는 자동으로 수행**하여 안전하게 보호합니다:
+   - 외부 웹훅 수신이나 가변 파라미터를 받는 서블릿의 경우 `security.allowUndefinedParams=true`로 설정하면 미정의 파라미터도 허용하되, **유입되는 모든 미정의 파라미터 값에 대해서도 Path Traversal 검사는 자동으로 수행**하여 안전하게 보호합니다:
    ```java
    property = {
        "sling.servlet.paths=/aemapi/webhook/callback",
@@ -453,5 +429,5 @@ property = {
 ```text
 SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/user/contact], Validator=[PARAM], Status=[400], ErrorCode=[SEC-40003], Reason=[Parameter [name] length (1) < min (2)]
   | BlockedByConfig=[param=name, minLength=2, actualLength=1, rule={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}]
-  | AppliedServletPolicy=[source=com.example.security.servlets.UserContactServlet, target=/aemapi/user/contact, methods=[POST], allowedReferrers=[abc.com, partner.abc.com], blockSqlInjection=true, blockXss=true, allowUndefinedParams=false, params={page={required=false, len=0..5, pattern='^[0-9]+$'}, ..., name={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}, email={required=true, len=0..50, pattern='^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'}}]
+  | AppliedServletPolicy=[source=EndpointPolicyConfig~core-member, target=/aemapi/user/contact, methods=[POST], allowedReferrers=[abc.com, partner.abc.com], allowUndefinedParams=false, params={page={required=false, len=0..5, pattern='^[0-9]+$'}, ..., name={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}, email={required=true, len=0..50, pattern='^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'}}]
 ```

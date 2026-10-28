@@ -13,9 +13,9 @@ public class TestRunner {
 
     public static void main(String[] args) {
         List<String> testClassNames = Arrays.asList(
-                "com.example.security.validators.SqlAndXssValidationTest",
                 "com.example.security.validators.PathTraversalValidationTest",
-                "com.example.security.models.IgnoreServletPoliciesTest"
+                "com.example.security.models.IgnoreServletPoliciesTest",
+                "com.example.security.registry.EndpointPolicyRegistryTest"
         );
 
         List<Class<?>> testClasses = new java.util.ArrayList<>();
