@@ -218,7 +218,7 @@ public class SecurityFilter implements Filter {
             }
         }
         LOG.info("SecurityFilter synced {} endpoint policies from EndpointPolicyRegistry: {}",
-                currentConfig.getPolicies().size(), currentConfig.getPolicies().keySet());
+                currentConfig.getPolicies().size(), currentConfig.getPolicies());
     }
 
     /**

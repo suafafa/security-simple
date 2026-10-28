@@ -332,6 +332,20 @@ public class ServletPolicyRule {
      */
     public void setParams(Map<String, ParamRule> params) {
         this.params = params;
+        if (this.lowerParams != null) {
+            if (params == null || params.isEmpty()) {
+                this.lowerParams = Collections.emptyMap();
+            } else {
+                Map<String, ParamRule> tempParams = new HashMap<>(params.size());
+                for (Map.Entry<String, ParamRule> entry : params.entrySet()) {
+                    if (entry.getKey() != null && entry.getValue() != null) {
+                        entry.getValue().init();
+                        tempParams.put(entry.getKey().trim().toLowerCase(), entry.getValue());
+                    }
+                }
+                this.lowerParams = Collections.unmodifiableMap(tempParams);
+            }
+        }
     }
 
     /**
@@ -456,13 +470,41 @@ public class ServletPolicyRule {
         }
 
         if (parent.params != null && !parent.params.isEmpty()) {
-            if (this.params == null || this.params.isEmpty()) {
-                this.params = new LinkedHashMap<>(parent.params);
-            } else {
-                Map<String, ParamRule> merged = new LinkedHashMap<>(parent.params);
-                merged.putAll(this.params); // 개별 서블릿의 파라미터 규칙이 기본 정책보다 우선함
-                this.params = merged;
+            Map<String, ParamRule> merged = new LinkedHashMap<>();
+            // 1. 개별 서블릿(.cfg.json)에 정의된 파라미터 규칙을 최우선으로 먼저 배치
+            if (this.params != null && !this.params.isEmpty()) {
+                for (Map.Entry<String, ParamRule> entry : this.params.entrySet()) {
+                    if (entry.getKey() != null && entry.getValue() != null) {
+                        String key = entry.getKey().trim().toLowerCase();
+                        ParamRule childCopy = entry.getValue().copy();
+                        // 부모(defaultPolicy)에 동일 파라미터가 있는 경우, 자식에 미지정된 길이/패턴 제약만 보완 상속
+                        ParamRule parentRule = parent.getParams().get(key);
+                        if (parentRule != null) {
+                            if (childCopy.getMinLength() == null && parentRule.getMinLength() != null) {
+                                childCopy.setMinLength(parentRule.getMinLength());
+                            }
+                            if (childCopy.getMaxLength() == null && parentRule.getMaxLength() != null) {
+                                childCopy.setMaxLength(parentRule.getMaxLength());
+                            }
+                            if (StringUtils.isBlank(childCopy.getPattern()) && StringUtils.isNotBlank(parentRule.getPattern())) {
+                                childCopy.setPattern(parentRule.getPattern());
+                            }
+                        }
+                        childCopy.init();
+                        merged.put(key, childCopy);
+                    }
+                }
             }
+            // 2. 개별 서블릿에 없는 공통 기본 파라미터(defaultPolicy)를 후순위로 병합
+            for (Map.Entry<String, ParamRule> entry : parent.params.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    String key = entry.getKey().trim().toLowerCase();
+                    if (!merged.containsKey(key)) {
+                        merged.put(key, entry.getValue().copy());
+                    }
+                }
+            }
+            this.params = merged;
         }
     }
 
@@ -479,7 +521,17 @@ public class ServletPolicyRule {
         this.defaultReferrer = other.defaultReferrer;
         this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
         this.allowUndefinedParams = other.allowUndefinedParams;
-        this.params = other.params != null ? new LinkedHashMap<>(other.params) : null;
+        if (other.params != null) {
+            Map<String, ParamRule> copiedParams = new LinkedHashMap<>(other.params.size());
+            for (Map.Entry<String, ParamRule> entry : other.params.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    copiedParams.put(entry.getKey().trim().toLowerCase(), entry.getValue().copy());
+                }
+            }
+            this.params = copiedParams;
+        } else {
+            this.params = null;
+        }
     }
 
     /**
@@ -502,33 +554,36 @@ public class ServletPolicyRule {
         }
 
         // 1. 허용 HTTP 메소드 (Methods)
-        List<String> methods = extractStringList(props, "methods");
+        List<String> methods = extractStringList(props, "methods", "allowedMethods", "security.methods");
         if (!methods.isEmpty()) {
             rule.setMethods(methods);
         }
 
         // 2. 허용 Referer 도메인 (Referrers)
-        List<String> allowedReferrers = extractStringList(props, "allowedReferrers", "referrers");
+        List<String> allowedReferrers = extractStringList(props, "allowedReferrers", "referrers", "security.referrers");
         if (!allowedReferrers.isEmpty()) {
             rule.setAllowedReferrers(allowedReferrers);
         }
 
         // 3. 미정의 파라미터 허용 여부 (Undefined Params)
-        Boolean allowUndef = extractBoolean(props, "allowUndefinedParams");
+        Boolean allowUndef = extractBoolean(props, "allowUndefinedParams", "allow_undefined_params", "security.allowUndefinedParams");
         if (allowUndef != null) {
             rule.setAllowUndefinedParams(allowUndef);
         }
 
-        // 4. 파라미터 규칙 통합 (간편 DSL 배열 형식)
+        // 4. 파라미터 규칙 통합 (간편 DSL 배열 형식, JSON 객체 배열 형식, JSON 맵 형식 모두 지원)
         Map<String, ParamRule> consolidatedParams = new LinkedHashMap<>();
-        List<String> rawParamEntries = extractRawStringsForKey(props, "params");
-        for (String rawSpec : rawParamEntries) {
-            if (StringUtils.isBlank(rawSpec) || rawSpec.trim().startsWith("{")) continue;
-            List<String> subItems = splitPreservingParens(rawSpec.trim(), ',');
-            for (String item : subItems) {
-                Map.Entry<String, ParamRule> entry = parseSimpleParamSpec(item);
-                if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
-                    consolidatedParams.put(entry.getKey().toLowerCase(), entry.getValue());
+        parseParamEntriesIntoMap(props, consolidatedParams, "params", "parameters", "paramRules", "security.params");
+
+        // 5. 필수 파라미터 목록 (requiredParams) 추가 지원
+        List<String> requiredParams = extractStringList(props, "requiredParams", "required_params", "security.requiredParams", "required");
+        for (String reqParam : requiredParams) {
+            if (StringUtils.isNotBlank(reqParam)) {
+                String key = stripWrappingQuotes(reqParam).toLowerCase();
+                if (StringUtils.isNotBlank(key) && !"true".equalsIgnoreCase(key) && !"false".equalsIgnoreCase(key)) {
+                    ParamRule pr = consolidatedParams.computeIfAbsent(key, k -> new ParamRule());
+                    pr.setRequired(true);
+                    pr.init();
                 }
             }
         }
@@ -538,6 +593,208 @@ public class ServletPolicyRule {
         }
 
         return rule;
+    }
+
+    /**
+     * 정책 객체에서 지정된 키들의 파라미터 정의(DSL 문자열, 배열, JSON 객체, Map 등)를 파싱하여 {@code targetMap}에 병합합니다.
+     *
+     * @param props     정책 속성 맵
+     * @param targetMap 파싱된 {@link ParamRule}을 저장할 맵 (키: 소문자 파라미터명)
+     * @param keys      추출할 키 후보 목록
+     */
+    @SuppressWarnings("unchecked")
+    private static void parseParamEntriesIntoMap(Map<String, Object> props, Map<String, ParamRule> targetMap, String... keys) {
+        for (String key : keys) {
+            if (!props.containsKey(key) || props.get(key) == null) {
+                continue;
+            }
+            Object rawVal = props.get(key);
+            if (rawVal instanceof Map<?, ?>) {
+                parseParamMapObject((Map<?, ?>) rawVal, targetMap);
+            } else if (rawVal instanceof Object[]) {
+                for (Object item : (Object[]) rawVal) {
+                    parseSingleParamElement(item, targetMap);
+                }
+            } else if (rawVal instanceof Collection<?>) {
+                for (Object item : (Collection<?>) rawVal) {
+                    parseSingleParamElement(item, targetMap);
+                }
+            } else {
+                parseSingleParamElement(rawVal, targetMap);
+            }
+        }
+    }
+
+    /**
+     * 단일 파라미터 요소(DSL 문자열, JSON 문자열, 또는 JSON 객체 Map)를 파싱하여 {@code targetMap}에 추가합니다.
+     */
+    @SuppressWarnings("unchecked")
+    private static void parseSingleParamElement(Object item, Map<String, ParamRule> targetMap) {
+        if (item == null) {
+            return;
+        }
+        if (item instanceof Map<?, ?>) {
+            parseParamObjectMapElement((Map<?, ?>) item, targetMap);
+            return;
+        }
+        if (item instanceof JsonElement) {
+            JsonElement el = (JsonElement) item;
+            if (el.isJsonObject()) {
+                java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
+                Map<String, Object> itemMap = new com.google.gson.Gson().fromJson(el, mapType);
+                parseParamObjectMapElement(itemMap, targetMap);
+                return;
+            } else if (el.isJsonPrimitive()) {
+                item = el.getAsString();
+            }
+        }
+
+        String rawSpec = item.toString().trim();
+        if (StringUtils.isBlank(rawSpec)) {
+            return;
+        }
+
+        // JSON 객체 문자열인지("{ \"name\": ... }") 또는 중괄호 래핑 DSL인지("{name:required:2..20}") 판별
+        if (rawSpec.startsWith("{") && rawSpec.endsWith("}")) {
+            String inner = rawSpec.substring(1, rawSpec.length() - 1).trim();
+            if (inner.startsWith("\"") || inner.startsWith("'")) {
+                try {
+                    java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
+                    Map<String, Object> itemMap = new com.google.gson.Gson().fromJson(rawSpec, mapType);
+                    if (itemMap != null) {
+                        parseParamObjectMapElement(itemMap, targetMap);
+                        return;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            rawSpec = inner;
+        }
+
+        List<String> subItems = splitPreservingParens(rawSpec, ',');
+        for (String sub : subItems) {
+            Map.Entry<String, ParamRule> entry = parseSimpleParamSpec(sub);
+            if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
+                targetMap.put(entry.getKey().trim().toLowerCase(), entry.getValue());
+            }
+        }
+    }
+
+    /**
+     * {@code "params": [ { "name": "userId", "required": true, "type": "alnum", "maxLength": 20 } ]} 형태의
+     * 개별 JSON 객체 Map 요소를 파싱합니다.
+     */
+    private static void parseParamObjectMapElement(Map<?, ?> itemMap, Map<String, ParamRule> targetMap) {
+        if (itemMap == null || itemMap.isEmpty()) {
+            return;
+        }
+        Map<String, Object> stringKeyMap = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : itemMap.entrySet()) {
+            if (e.getKey() != null) {
+                stringKeyMap.put(e.getKey().toString().trim(), e.getValue());
+            }
+        }
+
+        List<String> names = extractStringList(stringKeyMap, "name", "param", "paramName", "key", "id");
+        if (!names.isEmpty()) {
+            String pName = names.get(0);
+            ParamRule pr = buildParamRuleFromMap(stringKeyMap);
+            if (pr != null && StringUtils.isNotBlank(pName)) {
+                targetMap.put(pName.trim().toLowerCase(), pr);
+            }
+        } else {
+            // {"userId": "required:alnum:4..20"} 또는 {"userId": {"required": true, ...}} 형태인 경우
+            parseParamMapObject(itemMap, targetMap);
+        }
+    }
+
+    /**
+     * {@code "params": { "userId": { "required": true, ... }, "email": "required:email:50" }} 형태의 Map을 파싱합니다.
+     */
+    private static void parseParamMapObject(Map<?, ?> rawParams, Map<String, ParamRule> targetMap) {
+        for (Map.Entry<?, ?> pe : rawParams.entrySet()) {
+            if (pe.getKey() == null || pe.getValue() == null) continue;
+            String pName = pe.getKey().toString().trim();
+            Object pVal = pe.getValue();
+            if (pVal instanceof String) {
+                Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(pName + ":" + pVal.toString().trim());
+                if (parsed != null) {
+                    targetMap.put(pName.toLowerCase(), parsed.getValue());
+                }
+            } else if (pVal instanceof Map<?, ?>) {
+                Map<String, Object> subMap = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> se : ((Map<?, ?>) pVal).entrySet()) {
+                    if (se.getKey() != null) {
+                        subMap.put(se.getKey().toString().trim(), se.getValue());
+                    }
+                }
+                ParamRule pr = buildParamRuleFromMap(subMap);
+                if (pr != null) {
+                    targetMap.put(pName.toLowerCase(), pr);
+                }
+            }
+        }
+    }
+
+    /**
+     * JSON 객체 Map에서 {@link ParamRule}을 생성합니다 ({@code required}, {@code minLength}, {@code maxLength}, {@code pattern}, {@code type}/{@code spec} 모두 지원).
+     */
+    private static ParamRule buildParamRuleFromMap(Map<String, Object> map) {
+        ParamRule rule = new ParamRule();
+
+        // 1. spec 또는 type 필드에 간편 DSL 토큰이 있으면 먼저 적용
+        List<String> specs = extractStringList(map, "spec", "rule", "type", "format");
+        for (String spec : specs) {
+            Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec("dummy:" + spec);
+            if (parsed != null && parsed.getValue() != null) {
+                rule = parsed.getValue();
+            }
+        }
+
+        // 2. 명시적 필드 오버라이드 (required, minLength, maxLength, pattern, allowPathTraversal)
+        Boolean req = extractBoolean(map, "required", "mandatory", "isRequired");
+        if (req != null) {
+            rule.setRequired(req);
+        }
+        Boolean allowPt = extractBoolean(map, "allowPathTraversal", "allow_path_traversal");
+        if (allowPt != null) {
+            rule.setAllowPathTraversal(allowPt);
+        }
+        Integer minLen = extractInteger(map, "minLength", "min_length", "min");
+        if (minLen != null) {
+            rule.setMinLength(minLen);
+        }
+        Integer maxLen = extractInteger(map, "maxLength", "max_length", "max");
+        if (maxLen != null) {
+            rule.setMaxLength(maxLen);
+        }
+        List<String> patterns = extractStringList(map, "pattern", "regex");
+        if (!patterns.isEmpty()) {
+            rule.setPattern(patterns.get(0));
+        }
+
+        rule.init();
+        return rule;
+    }
+
+    /**
+     * Map에서 정수형 속성값을 추출합니다.
+     */
+    private static Integer extractInteger(Map<String, Object> props, String... keys) {
+        for (String k : keys) {
+            if (props.containsKey(k) && props.get(k) != null) {
+                Object val = props.get(k);
+                if (val instanceof Number) {
+                    return ((Number) val).intValue();
+                } else if (val instanceof String) {
+                    try {
+                        return Integer.parseInt(((String) val).trim());
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -641,8 +898,8 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 소괄호 {@code (...)} 내부에 있는 구분자(delimiter)는 무시하면서 문자열을 분리합니다.
-     * 예: {@code pattern(^[a-z:0-9]+$):10}을 {@code ':'} 기준으로 안전하게 분리할 때 사용합니다.
+     * 소괄호 {@code (...)}, 중괄호 {@code {...}}, 대괄호 {@code [...]} 내부에 있는 구분자(delimiter)는 무시하면서 문자열을 분리합니다.
+     * 예: {@code pattern(^[a-z:0-9]+$):10} 또는 {@code userId:required:^[a-zA-Z0-9]{4,20}$}를 안전하게 분리할 때 사용합니다.
      *
      * @param input     분리할 원본 문자열
      * @param delimiter 구분 문자
@@ -653,6 +910,8 @@ public class ServletPolicyRule {
         if (input == null) return tokens;
         StringBuilder current = new StringBuilder();
         int parenDepth = 0;
+        int braceDepth = 0;
+        int bracketDepth = 0;
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
             if (c == '(') {
@@ -661,7 +920,19 @@ public class ServletPolicyRule {
             } else if (c == ')') {
                 if (parenDepth > 0) parenDepth--;
                 current.append(c);
-            } else if (c == delimiter && parenDepth == 0) {
+            } else if (c == '{') {
+                braceDepth++;
+                current.append(c);
+            } else if (c == '}') {
+                if (braceDepth > 0) braceDepth--;
+                current.append(c);
+            } else if (c == '[') {
+                bracketDepth++;
+                current.append(c);
+            } else if (c == ']') {
+                if (bracketDepth > 0) bracketDepth--;
+                current.append(c);
+            } else if (c == delimiter && parenDepth == 0 && braceDepth == 0 && bracketDepth == 0) {
                 tokens.add(current.toString().trim());
                 current.setLength(0);
             } else {
@@ -675,6 +946,20 @@ public class ServletPolicyRule {
     }
 
     /**
+     * 문자열 양끝에 감싸진 따옴표({@code "..."} 또는 {@code '...'})를 제거합니다.
+     */
+    private static String stripWrappingQuotes(String input) {
+        if (input == null) {
+            return "";
+        }
+        String s = input.trim();
+        while (s.length() >= 2 && ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'")))) {
+            s = s.substring(1, s.length() - 1).trim();
+        }
+        return s;
+    }
+
+    /**
      * 간편 DSL 형식의 파라미터 설정 문자열(예: {@code "userId:required:alnum:4..20"})을 파싱하여
      * 파라미터 이름과 {@link ParamRule} 엔트리를 생성합니다.
      *
@@ -683,23 +968,47 @@ public class ServletPolicyRule {
      */
     public static Map.Entry<String, ParamRule> parseSimpleParamSpec(String fullSpec) {
         if (StringUtils.isBlank(fullSpec)) return null;
-        String clean = fullSpec.trim();
+        String clean = stripWrappingQuotes(fullSpec);
         if (clean.startsWith("{") && clean.endsWith("}")) {
-            clean = clean.substring(1, clean.length() - 1).trim();
+            clean = stripWrappingQuotes(clean.substring(1, clean.length() - 1));
         }
         List<String> parts = splitPreservingParens(clean, ':');
         if (parts.isEmpty() || StringUtils.isBlank(parts.get(0))) return null;
 
-        String paramName = parts.get(0).trim();
         ParamRule rule = new ParamRule();
+        String firstToken = stripWrappingQuotes(parts.get(0));
+        String paramName;
+        int startIndex = 1;
 
-        for (int i = 1; i < parts.size(); i++) {
-            String token = parts.get(i).trim();
+        // "required:userId:alnum:4..20" 또는 "optional:userId:20" 순서로 작성된 경우도 방어적으로 지원
+        if (("required".equalsIgnoreCase(firstToken) || "req".equalsIgnoreCase(firstToken) || "mandatory".equalsIgnoreCase(firstToken))
+                && parts.size() >= 2 && StringUtils.isNotBlank(parts.get(1))) {
+            rule.setRequired(true);
+            paramName = stripWrappingQuotes(parts.get(1));
+            startIndex = 2;
+        } else if (("optional".equalsIgnoreCase(firstToken) || "opt".equalsIgnoreCase(firstToken))
+                && parts.size() >= 2 && StringUtils.isNotBlank(parts.get(1))) {
+            rule.setRequired(false);
+            paramName = stripWrappingQuotes(parts.get(1));
+            startIndex = 2;
+        } else {
+            paramName = firstToken;
+        }
+
+        for (int i = startIndex; i < parts.size(); i++) {
+            String token = stripWrappingQuotes(parts.get(i));
             if (token.isEmpty()) continue;
 
-            if ("required".equalsIgnoreCase(token)) {
+            if ("required".equalsIgnoreCase(token)
+                    || "req".equalsIgnoreCase(token)
+                    || "mandatory".equalsIgnoreCase(token)
+                    || "required=true".equalsIgnoreCase(token)
+                    || "true".equalsIgnoreCase(token)) {
                 rule.setRequired(true);
-            } else if ("optional".equalsIgnoreCase(token)) {
+            } else if ("optional".equalsIgnoreCase(token)
+                    || "opt".equalsIgnoreCase(token)
+                    || "required=false".equalsIgnoreCase(token)
+                    || "false".equalsIgnoreCase(token)) {
                 rule.setRequired(false);
             } else if ("allowPathTraversal".equalsIgnoreCase(token) || "allow_path_traversal".equalsIgnoreCase(token)) {
                 rule.setAllowPathTraversal(true);
@@ -804,10 +1113,22 @@ public class ServletPolicyRule {
 
         Map<String, Object> map = null;
         if (entryObj instanceof Map<?, ?>) {
-            map = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) entryObj).entrySet()) {
-                if (e.getKey() != null) {
-                    map.put(e.getKey().toString(), e.getValue());
+            // javax.json.JsonObject / jakarta.json.JsonObject 등 Map을 구현한 JSON AST 객체인 경우
+            // 내부 값이 JsonString(따옴표 포함)이므로 JSON 문자열로 직렬화 후 표준 Java Map으로 파싱
+            String clsName = entryObj.getClass().getName().toLowerCase();
+            if (clsName.contains("json") && !clsName.contains("gson")) {
+                try {
+                    java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
+                    map = new com.google.gson.Gson().fromJson(entryObj.toString(), mapType);
+                } catch (Exception ignored) {
+                }
+            }
+            if (map == null) {
+                map = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> e : ((Map<?, ?>) entryObj).entrySet()) {
+                    if (e.getKey() != null) {
+                        map.put(e.getKey().toString(), e.getValue());
+                    }
                 }
             }
         } else if (entryObj instanceof JsonElement) {
@@ -816,8 +1137,8 @@ public class ServletPolicyRule {
                 java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
                 map = new com.google.gson.Gson().fromJson(el, mapType);
             }
-        } else if (entryObj instanceof String) {
-            String trimmed = ((String) entryObj).trim();
+        } else {
+            String trimmed = stripWrappingQuotes(entryObj.toString());
             if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
                 try {
                     java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
@@ -843,37 +1164,6 @@ public class ServletPolicyRule {
             }
             ServletPolicyRule rule = parseRuleForTarget(map);
             rule.setTarget(t.trim());
-
-            // params가 JSON 객체({"name": {"required": true, ...}} 또는 {"name": "required:2..20"})로 주어진 경우 추가 지원
-            Object rawParams = map.get("params");
-            if (rawParams instanceof Map<?, ?>) {
-                Map<String, ParamRule> paramMap = new LinkedHashMap<>(rule.getParams());
-                for (Map.Entry<?, ?> pe : ((Map<?, ?>) rawParams).entrySet()) {
-                    if (pe.getKey() == null || pe.getValue() == null) continue;
-                    String pName = pe.getKey().toString().trim();
-                    Object pVal = pe.getValue();
-                    if (pVal instanceof String) {
-                        Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(pName + ":" + pVal.toString().trim());
-                        if (parsed != null) {
-                            paramMap.put(pName.toLowerCase(), parsed.getValue());
-                        }
-                    } else if (pVal instanceof Map<?, ?>) {
-                        try {
-                            String json = new com.google.gson.Gson().toJson(pVal);
-                            ParamRule pr = new com.google.gson.Gson().fromJson(json, ParamRule.class);
-                            if (pr != null) {
-                                pr.init();
-                                paramMap.put(pName.toLowerCase(), pr);
-                            }
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }
-                if (!paramMap.isEmpty()) {
-                    rule.setParams(paramMap);
-                }
-            }
-
             rule.inheritFrom(defaultPolicy);
             rule.init();
             result.add(rule);

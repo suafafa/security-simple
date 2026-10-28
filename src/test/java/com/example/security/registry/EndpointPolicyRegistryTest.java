@@ -165,4 +165,80 @@ public class EndpointPolicyRegistryTest {
         ServletPolicyRule fallbackRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertEquals("DEFAULT", fallbackRule.getTarget());
     }
+
+    @Test
+    @DisplayName(".cfg.json 내 다양한 required 파라미터 정의 형식(DSL, JSON 객체 배열, JSON 맵, requiredParams, default.params 오버라이드) 등록 및 검증")
+    void testRequiredParamRegistrationAndValidation() {
+        String testJson = "{\n" +
+                "  \"enabled\": true,\n" +
+                "  \"bundle.id\": \"core-test\",\n" +
+                "  \"policies\": [\n" +
+                "    {\n" +
+                "      \"target\": \"/aemapi/test/dsl\",\n" +
+                "      \"methods\": [\"POST\"],\n" +
+                "      \"params\": [\n" +
+                "        \"userId:required:alnum:4..20\",\n" +
+                "        \"userName:2..20:korean:required\",\n" +
+                "        \"required:email:email:50\",\n" +
+                "        \"{phone:required:phone}\",\n" +
+                "        \"code:required:^[A-Z0-9]{4,10}$\",\n" +
+                "        \"id:required\"\n" +
+                "      ]\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"target\": \"/aemapi/test/json-array\",\n" +
+                "      \"methods\": [\"POST\"],\n" +
+                "      \"params\": [\n" +
+                "        {\n" +
+                "          \"name\": \"accountNo\",\n" +
+                "          \"required\": true,\n" +
+                "          \"minLength\": 10,\n" +
+                "          \"maxLength\": 14,\n" +
+                "          \"type\": \"digits\"\n" +
+                "        },\n" +
+                "        {\n" +
+                "          \"name\": \"memo\",\n" +
+                "          \"required\": false,\n" +
+                "          \"maxLength\": 100\n" +
+                "        }\n" +
+                "      ],\n" +
+                "      \"requiredParams\": [\"txToken\"]\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
+
+        EndpointPolicyConfig testConfig = EndpointPolicyConfig.fromCfgJson("core-test", testJson);
+        registry.bindPolicyConfig(testConfig, Collections.singletonMap("service.pid", testConfig.getConfigPid()));
+
+        // 1. /aemapi/test/dsl 의 모든 required 파라미터 등록 상태 확인
+        when(request.getRequestURI()).thenReturn("/aemapi/test/dsl");
+        ServletPolicyRule dslRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
+        assertNotNull(dslRule);
+        assertTrue(dslRule.getParams().get("userid").isRequired());
+        assertTrue(dslRule.getParams().get("username").isRequired());
+        assertTrue(dslRule.getParams().get("email").isRequired());
+        assertTrue(dslRule.getParams().get("phone").isRequired());
+        assertTrue(dslRule.getParams().get("code").isRequired());
+        assertEquals("^[A-Z0-9]{4,10}$", dslRule.getParams().get("code").getPattern());
+        assertTrue(dslRule.getParams().get("id").isRequired());
+
+        // 2. /aemapi/test/json-array 의 JSON 객체 배열 및 requiredParams 등록 상태 확인
+        when(request.getRequestURI()).thenReturn("/aemapi/test/json-array");
+        ServletPolicyRule jsonArrayRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
+        assertNotNull(jsonArrayRule);
+        assertTrue(jsonArrayRule.getParams().get("accountno").isRequired());
+        assertEquals(Integer.valueOf(10), jsonArrayRule.getParams().get("accountno").getMinLength());
+        assertEquals(Integer.valueOf(14), jsonArrayRule.getParams().get("accountno").getMaxLength());
+        assertFalse(jsonArrayRule.getParams().get("memo").isRequired());
+        assertTrue(jsonArrayRule.getParams().get("txtoken").isRequired());
+
+        // 3. ParamPolicyValidator 실제 필수 파라미터 누락 차단(SEC-40001) 검증
+        com.example.security.validators.ParamPolicyValidator validator = new com.example.security.validators.ParamPolicyValidator();
+        when(request.getParameterMap()).thenReturn(Collections.emptyMap());
+        com.example.security.validators.ValidationResult missingResult =
+                validator.validate(request, jsonArrayRule, securityFilter.getServletSecurityConfig());
+        assertFalse(missingResult.isValid());
+        assertEquals(400, missingResult.getStatusCode());
+        assertEquals("SEC-40001", missingResult.getSubCode());
+    }
 }

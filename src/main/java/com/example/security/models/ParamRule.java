@@ -45,6 +45,23 @@ public class ParamRule {
     }
 
     /**
+     * 현재 {@link ParamRule}의 모든 설정값을 깊은 복사(Deep Copy)한 새 인스턴스를 반환합니다.
+     *
+     * @return 복사된 {@link ParamRule} 객체
+     */
+    public ParamRule copy() {
+        ParamRule cloned = new ParamRule();
+        cloned.enabled = this.enabled;
+        cloned.required = this.required;
+        cloned.minLength = this.minLength;
+        cloned.maxLength = this.maxLength;
+        cloned.pattern = this.pattern;
+        cloned.allowPathTraversal = this.allowPathTraversal;
+        cloned.compiledPattern = this.compiledPattern;
+        return cloned;
+    }
+
+    /**
      * 파라미터 규칙의 정규식 문법 및 최소/최대 길이 설정의 유효성을 검사합니다.
      *
      * @param paramName 파라미터 이름
