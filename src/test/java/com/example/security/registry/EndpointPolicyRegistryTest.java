@@ -158,7 +158,7 @@ public class EndpointPolicyRegistryTest {
 
         // 3. .cfg.json 파일 삭제(unbindPolicyConfig): 정책 즉시 해제 및 DEFAULT 폴백 확인
         registry.unbindPolicyConfig(updatedTemp, pidProps);
-        assertNull(securityFilter.getServletSecurityConfig().getDynamicPolicy("/aemapi/user/profile"));
+        assertNull(securityFilter.getServletSecurityConfig().getPolicy("/aemapi/user/profile"));
         ServletPolicyRule fallbackRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertEquals("DEFAULT", fallbackRule.getTarget());
     }

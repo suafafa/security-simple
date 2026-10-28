@@ -136,9 +136,8 @@ public class SecurityFilter implements Filter {
     private volatile Pattern compiledFilterPattern = Pattern.compile(DEFAULT_FILTER_PATTERN);
     private volatile ServletSecurityConfig servletSecurityConfig;
 
-    // EndpointPolicyRegistry(.cfg.json 번들 설정 수집기) 및 레지스트리 관리 타겟 집합
+    // EndpointPolicyRegistry(.cfg.json 번들 설정 수집기) 및 변경 감지 리스너
     private volatile EndpointPolicyRegistry endpointPolicyRegistry;
-    private final Set<String> registryManagedTargets = ConcurrentHashMap.newKeySet();
     private final Runnable registryChangeListener = this::syncRegistryPolicies;
 
     // 핵심 3대 정책 검증기 (Referer -> Method -> Param)
@@ -199,13 +198,10 @@ public class SecurityFilter implements Filter {
             return;
         }
 
-        // 1. 기존에 레지스트리를 통해 등록되었던 타겟들을 제거
-        for (String oldTarget : registryManagedTargets) {
-            currentConfig.unregisterDynamicPolicy(oldTarget);
-        }
-        registryManagedTargets.clear();
+        // 1. 기존 등록된 개별 엔드포인트 정책 인덱스 초기화
+        currentConfig.clearPolicies();
 
-        // 2. EndpointPolicyRegistry(.cfg.json)에 등록된 정책들만 등록
+        // 2. EndpointPolicyRegistry(.cfg.json)에 등록된 정책들을 등록
         EndpointPolicyRegistry registry = this.endpointPolicyRegistry;
         if (registry != null) {
             List<ServletPolicyRule> regRules = registry.getAllPolicies();
@@ -214,8 +210,7 @@ public class SecurityFilter implements Filter {
                     if (rule != null && matchesFilterPattern(rule.getTarget())) {
                         ServletPolicyRule copy = new ServletPolicyRule();
                         copy.copyFrom(rule);
-                        currentConfig.registerDynamicPolicy(copy);
-                        registryManagedTargets.add(copy.getTarget().trim());
+                        currentConfig.registerPolicy(copy);
                     }
                 }
             }
@@ -307,7 +302,7 @@ public class SecurityFilter implements Filter {
         try {
             ServletPolicyRule defaultRule = buildDefaultPolicy(config);
 
-            ServletSecurityConfig newConfig = new ServletSecurityConfig(isEnabled, Collections.emptyList());
+            ServletSecurityConfig newConfig = new ServletSecurityConfig(isEnabled);
             newConfig.setDefaultPolicy(defaultRule);
             if (StringUtils.isNotBlank(defaultRule.getDefaultReferrer())) {
                 newConfig.setDefaultReferrer(defaultRule.getDefaultReferrer());
@@ -326,7 +321,7 @@ public class SecurityFilter implements Filter {
             syncRegistryPolicies();
 
             LOG.info("SecurityFilter activated for AEM 6.5. Filter Enabled: {}, Filter Pattern: {}, Active Policies: {}",
-                    enabled, filterPattern, servletSecurityConfig.getDynamicPolicies().size());
+                    enabled, filterPattern, servletSecurityConfig.getPolicies().size());
         } catch (Exception e) {
             handleConfigFailure("OSGi Config", e, isEnabled);
         }
@@ -380,7 +375,6 @@ public class SecurityFilter implements Filter {
         if (registry != null) {
             registry.removeChangeListener(registryChangeListener);
         }
-        registryManagedTargets.clear();
         LOG.info("SecurityFilter deactivated.");
     }
 
@@ -522,14 +516,14 @@ public class SecurityFilter implements Filter {
      */
     private void handleConfigFailure(final String source, final Exception e, final boolean isEnabled) {
         if (this.servletSecurityConfig != null &&
-                ((this.servletSecurityConfig.getPolicies() != null && !this.servletSecurityConfig.getPolicies().isEmpty())
+                (!this.servletSecurityConfig.getPolicies().isEmpty()
                         || this.servletSecurityConfig.getDefaultPolicy() != null)) {
             LOG.error("CRITICAL: Failed to parse servlet policies from {}! Retaining previous active configuration (Last Known Good). Error: {}",
                     source, e.getMessage(), e);
         } else {
             LOG.error("CRITICAL: Failed to parse servlet policies from {} during startup. Initializing safe fallback config. Error: {}",
                     source, e.getMessage(), e);
-            ServletSecurityConfig fallback = new ServletSecurityConfig(isEnabled, Collections.emptyList());
+            ServletSecurityConfig fallback = new ServletSecurityConfig(isEnabled);
             fallback.init();
             this.servletSecurityConfig = fallback;
         }

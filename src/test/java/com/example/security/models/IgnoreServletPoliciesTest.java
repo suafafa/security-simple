@@ -38,7 +38,7 @@ public class IgnoreServletPoliciesTest {
         servletPolicy = new ServletPolicyRule();
         servletPolicy.setTarget("/aemapi/user/contact");
         servletPolicy.setDefaultReferrer("custom.com");
-        config.registerDynamicPolicy(servletPolicy);
+        config.registerPolicy(servletPolicy);
     }
 
     @Test
@@ -100,7 +100,7 @@ public class IgnoreServletPoliciesTest {
         filter.bindPolicyRegistry(registry);
 
         // 1. 레지스트리 정책은 정상 등록됨 (설정 토글 지원을 위해 보존)
-        assertNotNull(secConfig.getDynamicPolicy("/aemapi/user/test"));
+        assertNotNull(secConfig.getPolicy("/aemapi/user/test"));
 
         // 2. 그러나 실제 요청 시에는 ignoreServletPolicies=true이므로 defaultPolicy만 반환됨
         when(request.getRequestURI()).thenReturn("/aemapi/user/test");

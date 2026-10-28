@@ -126,13 +126,14 @@ classDiagram
         +boolean enabled
         +String defaultReferrer
         +ServletPolicyRule defaultPolicy
-        +List~ServletPolicyRule~ policies
-        +Map~String, ServletPolicyRule~ dynamicExactUriMap
-        +Map~String, ServletPolicyRule~ dynamicResourceTypeMap
-        +List~ServletPolicyRule~ dynamicPatternPolicies
+        +Map~String, ServletPolicyRule~ exactUriMap
+        +Map~String, ServletPolicyRule~ resourceTypeMap
+        +List~ServletPolicyRule~ patternPolicies
+        +Map~String, ServletPolicyRule~ policiesByTarget
         +Map~String, Boolean~ validatorStatusMap
         +findMatchingPolicy(request) ServletPolicyRule
-        +registerDynamicPolicy(rule)
+        +registerPolicy(rule)
+        +clearPolicies()
     }
 
     class ServletPolicyRule {
@@ -183,7 +184,7 @@ classDiagram
 | :--- | :--- | :--- | :--- |
 | **`SecurityFilter`**<br>(루트 필터) | • 필터 전체 활성화 여부(`enabled`)<br>• 필터 정규식(`sling.filter.pattern`)<br>• 정책 레지스트리 참조(`policyRegistry`)<br>• 3대 검증기 인스턴스 체인 | OSGi Configuration Admin<br>(`SecurityFilter.config`) | Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할을 수행하며, `EndpointPolicyRegistry`의 변경 알림을 수신 |
 | **`EndpointPolicyRegistry`**<br>(번들 정책 레지스트리) | • 번들별 정책 맵(`bundleRulesMap`)<br>• 병합된 타겟별 정책 맵(`mergedRulesMap`)<br>• 변경 콜백 리스너(`listeners`) | 번들별 `.cfg.json`<br>(`EndpointPolicyConfig~*.cfg.json`) | 각 번들의 `.cfg.json` 파일에 정의된 `policies` 배열을 파싱·수집하고 변경 시 `SecurityFilter`에 즉시 동기화 |
-| **`ServletSecurityConfig`**<br>(전체 정책 컨테이너) | • 전역 기본 정책(`defaultPolicy`)<br>• 서블릿별 보안 정책 컬렉션(`policies`)<br>• O(1) 고속 매칭 인덱스(`dynamicExactUriMap`, `dynamicResourceTypeMap`)<br>• 검증기 On/Off 상태 맵 | `SecurityFilter.config` +<br>`EndpointPolicyRegistry` | 요청 인입 시 6단계 우선순위(URI 정확 일치 → ResourceType → 정규식 패턴 → DefaultPolicy)로 O(1) 고속 탐색 |
+| **`ServletSecurityConfig`**<br>(전체 정책 컨테이너) | • 전역 기본 정책(`defaultPolicy`)<br>• O(1) 고속 매칭 인덱스(`exactUriMap`, `resourceTypeMap`, `patternPolicies`)<br>• 검증기 On/Off 상태 맵 | `SecurityFilter.config` +<br>`EndpointPolicyRegistry` | 요청 인입 시 6단계 우선순위(URI 정확 일치 → Base URI → ResourceType → 정규식 패턴 → 경로 접두사 → DefaultPolicy)로 O(1) 고속 탐색 |
 | **`ServletPolicyRule`**<br>(타겟별 보안 정책) | • 타겟 식별자(`target`: 경로 또는 resourceType)<br>• 허용 HTTP 메서드 화이트리스트(`methods`)<br>• 허용 Referer 목록(`allowedReferrers`)<br>• 미정의 파라미터 허용 여부(`allowUndefinedParams`)<br>• 파라미터 검증 맵(`params`) | 번들별 `.cfg.json` 내<br>`policies` 배열 항목 | `inheritFrom(defaultPolicy)`를 통해 선언되지 않은 기본값 및 공통 파라미터(`default.params`)를 자동 상속/병합 |
 | **`ParamRule`**<br>(파라미터 검증 단위) | • 파라미터명(`name`)<br>• 필수 여부(`required`)<br>• 길이 제약(`minLength`, `maxLength`)<br>• 사전 컴파일된 정규식(`compiledPattern`)<br>• 타입 별칭(`digits`, `alnum`, `email` 등)<br>• 예외 플래그(`allowPathTraversal`) | `params` DSL 배열 | 인입 파라미터의 값 하나하나에 대해 타입, 길이, 정규식, PathTraversal 공격 구문을 정밀 검증 |
 | **`ValidationResult`**<br>(검증 결과 DTO) | • 검증 성공 여부(`valid`)<br>• HTTP 응답 상태 코드(`400`, `403`, `405`)<br>• 표준 에러 서브코드(`SEC-40001` ~ `SEC-40501`)<br>• 에러 메시지 및 상세 차단 원인(`BlockedByConfig`) | 각 `PolicyValidator` 검증 실행 시 반환 | 검증 실패 시 상위 필터로 차단 사유를 전달하여 즉각적인 Fail-Fast JSON 응답 생성 |
