@@ -553,9 +553,11 @@ public class ServletPolicyRule {
         }
         Object val = props.get(key);
         List<String> list = new ArrayList<>();
-        if (val instanceof String[]) {
-            for (String s : (String[]) val) {
-                if (StringUtils.isNotBlank(s)) list.add(s.trim());
+        if (val instanceof Object[]) {
+            for (Object item : (Object[]) val) {
+                if (item != null && StringUtils.isNotBlank(item.toString())) {
+                    list.add(item.toString().trim());
+                }
             }
         } else if (val instanceof Collection<?>) {
             for (Object item : (Collection<?>) val) {
@@ -583,15 +585,17 @@ public class ServletPolicyRule {
         for (String k : keys) {
             if (props.containsKey(k)) {
                 Object val = props.get(k);
-                if (val instanceof String[]) {
+                if (val instanceof Object[]) {
                     List<String> list = new ArrayList<>();
-                    for (String s : (String[]) val) {
-                        if (StringUtils.isNotBlank(s)) list.add(s.trim());
+                    for (Object item : (Object[]) val) {
+                        if (item != null && StringUtils.isNotBlank(item.toString())) {
+                            list.add(item.toString().trim());
+                        }
                     }
                     return list;
-                } else if (val instanceof List) {
+                } else if (val instanceof Collection<?>) {
                     List<String> list = new ArrayList<>();
-                    for (Object item : (List<?>) val) {
+                    for (Object item : (Collection<?>) val) {
                         if (item != null && StringUtils.isNotBlank(item.toString())) {
                             list.add(item.toString().trim());
                         }
@@ -697,6 +701,8 @@ public class ServletPolicyRule {
                 rule.setRequired(true);
             } else if ("optional".equalsIgnoreCase(token)) {
                 rule.setRequired(false);
+            } else if ("allowPathTraversal".equalsIgnoreCase(token) || "allow_path_traversal".equalsIgnoreCase(token)) {
+                rule.setAllowPathTraversal(true);
             } else if ("email".equalsIgnoreCase(token)) {
                 rule.setPattern("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
                 if (rule.getMaxLength() == null) rule.setMaxLength(100);

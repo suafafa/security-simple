@@ -144,9 +144,12 @@ public class EndpointPolicyRegistryTest {
                 "    }\n" +
                 "  ]\n" +
                 "}";
-        EndpointPolicyConfig updatedTemp = EndpointPolicyConfig.fromCfgJson("core-member", updatedMemberJson);
-        // 동일 인스턴스 갱신 후 updatedPolicyConfig 호출
-        registry.updatedPolicyConfig(updatedTemp, pidProps);
+        // 2. 운영 중 .cfg.json 수정: OSGi @Modified가 기존 memberConfig.activate()만 호출하더라도
+        //    modificationListener를 통해 레지스트리와 SecurityFilter가 즉시 자동 갱신되는지 검증
+        java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>() {}.getType();
+        Map<String, Object> updatedProps = new com.google.gson.Gson().fromJson(updatedMemberJson, mapType);
+        updatedProps.put("service.pid", memberConfig.getConfigPid());
+        memberConfig.activateFromProperties(updatedProps);
 
         // 재기동 없이 SecurityFilter에서 POST 허용 및 신규 엔드포인트 즉시 인식 확인
         ServletPolicyRule updatedRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
@@ -157,7 +160,7 @@ public class EndpointPolicyRegistryTest {
         assertEquals("/aemapi/user/avatar", avatarRule.getTarget());
 
         // 3. .cfg.json 파일 삭제(unbindPolicyConfig): 정책 즉시 해제 및 DEFAULT 폴백 확인
-        registry.unbindPolicyConfig(updatedTemp, pidProps);
+        registry.unbindPolicyConfig(memberConfig, pidProps);
         assertNull(securityFilter.getServletSecurityConfig().getPolicy("/aemapi/user/profile"));
         ServletPolicyRule fallbackRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertEquals("DEFAULT", fallbackRule.getTarget());

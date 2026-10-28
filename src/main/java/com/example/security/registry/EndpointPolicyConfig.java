@@ -74,6 +74,24 @@ public class EndpointPolicyConfig {
     private volatile String bundleId = "default-bundle";
     private volatile String configPid = "";
     private volatile List<ServletPolicyRule> parsedRules = Collections.emptyList();
+    private volatile Runnable modificationListener;
+
+    /**
+     * 설정이 {@code @Activate} 또는 {@code @Modified}로 갱신될 때 즉시 호출할 리스너를 등록합니다.
+     * OSGi SCR의 {@code updated} 콜백 호출 순서나 생략 여부에 영향받지 않고 레지스트리가 즉시 갱신되도록 보장합니다.
+     *
+     * @param listener 설정 변경 시 실행할 콜백
+     */
+    public void setModificationListener(final Runnable listener) {
+        this.modificationListener = listener;
+    }
+
+    private void notifyModificationListener() {
+        Runnable listener = this.modificationListener;
+        if (listener != null) {
+            listener.run();
+        }
+    }
 
     /**
      * OSGi Factory Configuration 활성화({@code @Activate}) 및 실시간 파일 수정({@code @Modified}) 시 호출됩니다.
@@ -100,6 +118,7 @@ public class EndpointPolicyConfig {
         if (!isEnabled) {
             this.parsedRules = Collections.emptyList();
             LOG.info("EndpointPolicyConfig [bundleId={}, pid={}] is disabled. Active rules: 0", bundleId, configPid);
+            notifyModificationListener();
             return;
         }
 
@@ -125,8 +144,9 @@ public class EndpointPolicyConfig {
         }
 
         this.parsedRules = Collections.unmodifiableList(new ArrayList<>(ruleMap.values()));
-        LOG.info("EndpointPolicyConfig activated/modified: bundleId=[{}], pid=[{}], loadedPolicies={}",
-                bundleId, configPid, this.parsedRules.size());
+        LOG.info("EndpointPolicyConfig activated/modified: bundleId=[{}], pid=[{}], loadedPolicies={}, rules={}",
+                bundleId, configPid, this.parsedRules.size(), this.parsedRules);
+        notifyModificationListener();
     }
 
     /**

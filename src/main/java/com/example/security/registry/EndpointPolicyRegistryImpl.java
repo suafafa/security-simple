@@ -75,6 +75,7 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         String key = resolveConfigKey(config, properties);
         configInstanceKeys.put(config, key);
         boundConfigsByKey.put(key, config);
+        config.setModificationListener(this::rebuildActivePolicyCache);
 
         LOG.info("Bound EndpointPolicyConfig [key={}, bundleId={}, policies={}]",
                 key, config.getBundleId(), config.getParsedRules().size());
@@ -98,6 +99,7 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         }
         configInstanceKeys.put(config, newKey);
         boundConfigsByKey.put(newKey, config);
+        config.setModificationListener(this::rebuildActivePolicyCache);
 
         LOG.info("Updated EndpointPolicyConfig [key={}, bundleId={}, policies={}]",
                 newKey, config.getBundleId(), config.getParsedRules().size());
@@ -114,6 +116,7 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         if (config == null) {
             return;
         }
+        config.setModificationListener(null);
         String key = configInstanceKeys.remove(config);
         if (key == null) {
             key = resolveConfigKey(config, properties);
