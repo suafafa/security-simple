@@ -220,7 +220,7 @@
         </h1>
         <p style="margin-top:20px;font-size:17px;color:#cbd5e1;line-height:1.6;max-width:980px;">
           <strong>Referer · HTTP Method · Parameter</strong> 3대 핵심 보안 검증기를 기반으로<br/>
-          OSGi 동적 서블릿 바인딩, 기본 정책(Default Policy) 자동 상속, 단계별 디버그 및 차단 원인(<code>BlockedByConfig</code>) 상세 로깅을 제공하는 고성능 Sling 서블릿 보안 프레임워크
+          번들별 <code>.cfg.json</code> 정책 레지스트리(<code>EndpointPolicyRegistry</code>), 기본 정책(Default Policy) 자동 상속, 단계별 디버그 및 차단 원인(<code>BlockedByConfig</code>) 상세 로깅을 제공하는 고성능 Sling 서블릿 보안 프레임워크
         </p>
       </div>
       <div class="grid-3" style="max-height:210px;">
@@ -242,7 +242,7 @@
           <div class="card-header indigo">3. ParamPolicyValidator</div>
           <div class="card-body" style="color:#e2e8f0;">
             <div>• 필수/미정의 파라미터 통제, 길이·정규식·DSL 검증</div>
-            <div>• Path Traversal · SQL/JCR2 Injection · XSS 방어 (<code>SEC-40001~9</code>)</div>
+            <div>• Path Traversal 경로 조작 방어 (<code>SEC-40001~7</code>)</div>
           </div>
         </div>
       </div>
@@ -271,14 +271,14 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-header teal">2. 선언적 보안 설정 & 기본 정책 상속</div>
+            <div class="card-header teal">2. 번들별 .cfg.json 설정 & 기본 정책 상속</div>
             <div class="card-body">
               <div>• <strong>중앙 집중형 기본 정책 (<code>SecurityFilter.config</code>)</strong></div>
               <div>&nbsp;&nbsp;- 기본 Referer(<code>abc.com</code>), 기본 Method(<code>GET, POST</code>), 공통 파라미터(<code>page, size, keyword</code> 등) 일괄 정의</div>
-              <div>• <strong>서블릿 컴포넌트 선언적 바인딩 (<code>@Component</code>)</strong></div>
-              <div>&nbsp;&nbsp;- 각 서블릿이 <code>security.methods</code>, <code>security.params</code> 등 필요한 항목만 선언하면 OSGi가 자동 등록</div>
+              <div>• <strong>번들별 <code>.cfg.json</code> 배열 구조 (<code>EndpointPolicyRegistry</code>)</strong></div>
+              <div>&nbsp;&nbsp;- <code>EndpointPolicyConfig~&lt;번들명&gt;.cfg.json</code>의 <code>policies</code> 배열에 서블릿 경로(<code>target</code>)별 규칙 선언</div>
               <div>• <strong>계층적 상속 (<code>inheritFrom</code>)</strong></div>
-              <div>&nbsp;&nbsp;- 서블릿에 미지정된 설정은 <code>defaultPolicy</code>에서 자동 상속</div>
+              <div>&nbsp;&nbsp;- 미지정된 설정은 <code>defaultPolicy</code>에서 자동 상속</div>
             </div>
           </div>
           <div class="card">
@@ -290,7 +290,7 @@
               <div>• <strong>차단 시 즉각적인 원인 파악 로깅</strong></div>
               <div>&nbsp;&nbsp;- <code>BlockedByConfig</code>: 차단을 유발한 설정 규칙과 입력값</div>
               <div>&nbsp;&nbsp;- <code>AppliedServletPolicy</code>: 서블릿의 현재 전체 보안설정 요약</div>
-              <div>• <strong>서블릿 바인딩/언바인딩 시 디버그 로그 출력 차단</strong></div>
+              <div>• <strong>레지스트리 콜백 기반 실시간 무중단 동기화</strong></div>
             </div>
           </div>
         </div>
@@ -319,10 +319,11 @@
           <div class="card">
             <div class="card-header navy">패키지 및 핵심 클래스 구성 (com.example.security)</div>
             <div class="card-body">
-              <div>• <strong>filters.SecurityFilter</strong> : Sling REQUEST 필터(Ranking 10000), OSGi 설정 로드, 동적 서블릿 바인딩, 검증기 체인 실행 및 위반 응답 처리</div>
+              <div>• <strong>filters.SecurityFilter</strong> : Sling REQUEST 필터(Ranking 10000), OSGi 설정 로드, <code>EndpointPolicyRegistry</code> 정책 동기화, 검증기 체인 실행 및 위반 응답 처리</div>
+              <div>• <strong>registry.EndpointPolicyRegistryImpl</strong> : 번들별 <code>.cfg.json</code>(<code>EndpointPolicyConfig</code>) 수집·병합 및 변경 리스너 통지</div>
               <div>• <strong>models.ServletSecurityConfig</strong> : 정적/동적 정책 캐시 관리 및 6단계(Tier 1~6) 정책 매칭 엔진</div>
-              <div>• <strong>models.ServletPolicyRule</strong> : 서블릿/타겟별 보안 규칙 모델, OSGi 프로퍼티 & 간편 DSL 파서, <code>defaultPolicy</code> 상속</div>
-              <div>• <strong>models.ParamRule</strong> : 파라미터별 필수 여부, 길이, 정규식, SQLi/XSS/PathTraversal 허용 여부 관리</div>
+              <div>• <strong>models.ServletPolicyRule</strong> : 서블릿/타겟별 보안 규칙 모델, JSON 정책 & 간편 DSL 파서, <code>defaultPolicy</code> 상속</div>
+              <div>• <strong>models.ParamRule</strong> : 파라미터별 필수 여부, 길이, 정규식, PathTraversal 허용 여부 관리</div>
               <div>• <strong>validators.*</strong> : <code>PolicyValidator</code> 인터페이스 및 <code>Referer</code> / <code>Method</code> / <code>Param</code> 검증기, <code>ValidationResult</code></div>
             </div>
           </div>
@@ -363,15 +364,15 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-header" style="padding:6px 12px;font-size:12.5px;">1. 전역 기본 정책 (SecurityFilter.config)</div>
             <div class="card-body" style="padding:8px 12px;font-size:12px;">
               <div>• 기본 도메인: <code>default.referrer = "abc.com"</code></div>
-              <div>• 기본 메소드: <code>GET, POST</code> / SQLi·XSS 자동 차단</div>
+              <div>• 기본 메소드: <code>GET, POST</code> / Path Traversal 자동 차단</div>
               <div>• 공통 파라미터: <code>page, size, sort, order, lang, keyword</code></div>
             </div>
           </div>
           <div class="card" style="background:#f0fdfa;border-color:#0d9488;">
-            <div class="card-header teal" style="padding:6px 12px;font-size:12.5px;">2. 서블릿 개별 정책 (@Component Property)</div>
+            <div class="card-header teal" style="padding:6px 12px;font-size:12.5px;">2. 번들별 .cfg.json 정책 (EndpointPolicyRegistry)</div>
             <div class="card-body" style="padding:8px 12px;font-size:12px;">
-              <div>• OSGi <code>@Reference</code> 동적 바인딩 (<code>bindServlet</code>)</div>
-              <div>• 서블릿별 <code>security.methods</code> / <code>security.params</code> 선언</div>
+              <div>• <code>EndpointPolicyConfig~&lt;번들명&gt;.cfg.json</code> 배열 구조</div>
+              <div>• 서블릿 경로(<code>target</code>)별 <code>methods</code> / <code>params</code> 선언</div>
               <div style="color:#0d9488;font-weight:700;">• 미선언 항목은 기본 정책(<code>defaultPolicy</code>) 자동 상속!</div>
             </div>
           </div>
@@ -412,7 +413,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
                 <div style="background:#4f46e5;color:#fff;font-weight:700;padding:4px 8px;border-radius:5px;text-align:center;margin-bottom:8px;">STEP 3. 3대 검증기 체인</div>
                 <div style="color:#0d9488;font-weight:700;">① Referer (도메인 403)</div>
                 <div style="color:#2563eb;font-weight:700;">② Method (메소드 405)</div>
-                <div style="color:#4f46e5;font-weight:700;">③ Param (필수/길이/SQLi/XSS/경로 400)</div>
+                <div style="color:#4f46e5;font-weight:700;">③ Param (필수/길이/정규식/경로 400)</div>
               </div>
             </div>
           </div>
@@ -467,7 +468,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div><strong style="color:#dc2626;">[1] Fail-Fast JSON 에러 응답</strong></div>
               <div>• 403 <code>SEC-40303</code> (Referer)</div>
               <div>• 405 <code>SEC-40501</code> (Method)</div>
-              <div>• 400 <code>SEC-40001~9</code> (Param)</div>
+              <div>• 400 <code>SEC-40001~7</code> (Param)</div>
               <div><strong>[2] SLF4J WARN/DEBUG 감사 로그</strong></div>
               <div>• <code>BlockedByConfig</code> (차단 규칙·값)</div>
               <div>• <code>AppliedServletPolicy</code> (적용 정책)</div>
@@ -488,11 +489,11 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
                 <div>• <code>default.ignoreServletPolicies</code> (글로벌 강제)</div>
               </div>
               <div style="background:#fff;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
-                <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">OSGi @Reference 동적 서블릿 감지 (boundServlets)</div>
-                <div>• <code>bindServlet()</code> / <code>unbindServlet()</code> 실시간 감지</div>
-                <div>• 서블릿 <code>@Component</code> (<code>security.methods/params</code>)</div>
+                <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">번들별 .cfg.json 감지 (EndpointPolicyRegistry)</div>
+                <div>• <code>EndpointPolicyConfig~&lt;번들명&gt;.cfg.json</code> 실시간 감지</div>
+                <div>• 서블릿 경로별 JSON 배열(<code>policies</code>) 파싱</div>
                 <div>• <code>inheritFrom(defaultPolicy)</code> 기본 정책 자동 상속</div>
-                <div>• 바인딩/언바인딩 디버그 로그 노이즈 억제</div>
+                <div>• 콜백 리스너를 통해 <code>SecurityFilter</code> 즉시 동기화</div>
               </div>
             </div>
           </div>
@@ -531,8 +532,8 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
                   <div style="background:#fff;border:1px solid #4f46e5;border-radius:6px;padding:6px 8px;">
                     <div style="color:#4f46e5;font-weight:800;">3. ParamPolicyValidator</div>
                     <div>• 필수(40001) / 미정의(40002)</div>
-                    <div>• PathTraversal·SQL/JCRi·XSS</div>
-                    <div style="color:#dc2626;font-weight:700;">• 위반: 400 (SEC-40001~9)</div>
+                    <div>• 길이·정규식·PathTraversal</div>
+                    <div style="color:#dc2626;font-weight:700;">• 위반: 400 (SEC-40001~7)</div>
                   </div>
                 </div>
               </div>
@@ -554,7 +555,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>• POST / DSL 파라미터 검증</div>
             </div>
             <div style="background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:8px;">
-              <strong>MultiPathOrderServlet</strong>
+              <strong>Order Servlets</strong>
               <div>• <code>/aemapi/order/inquiry</code> (GET)</div>
               <div>• <code>/aemapi/order/cancel</code> (POST)</div>
             </div>
@@ -594,28 +595,28 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:36px;"><strong>② Filter ➔ Filter (Self-Loop) :</strong> <code>1. filterPattern 정규식 사전 컴파일</code> (<code>Pattern.compile()</code> 캐싱)</div>
             <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>③ Filter ➔ Config :</strong> <code>2. defaultPolicy (기본 정책) 생성 및 등록</code> (<code>buildDefaultPolicy</code>)</div>
             <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 검증기 토글(Referer/Method/Param) 설정 &amp; ignoreServletPolicies 반영</code></div>
-            <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>⑤ Filter ➔ Config :</strong> <code>4. 기존 바인딩 서블릿들과 defaultPolicy 동기화</code> (<code>registerDynamicPolicy</code>)</div>
+            <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>⑤ Filter ➔ Config :</strong> <code>4. EndpointPolicyRegistry(.cfg.json) 정책과 defaultPolicy 동기화</code> (<code>syncRegistryPolicies</code>)</div>
           </div>
           <div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:6px;padding:6px;text-align:center;font-weight:700;font-size:11.5px;color:#0f172a;">[무중단 복원력] 설정 파싱 예외 발생 시 <code>handleConfigFailure()</code>가 직전 정상 설정(Last Known Good) 유지</div>
         </div>
         <div class="card" style="border-color:#2563eb;">
           <div class="card-header navy">기동 및 설정 로드 관점 (activate) 핵심 동작</div>
           <div class="card-body" style="font-size:12px;gap:8px;">
-            <div><strong>1. 필터 대상 패턴 사전 컴파일:</strong> <code>sling.filter.pattern</code>을 <code>Pattern.compile()</code>로 메모리에 캐싱하여 런타임 컴파일 부하 제거 및 미일치 정책 자동 해제</div>
-            <div><strong>2. 전역 기본 정책(defaultPolicy) 생성:</strong> 기본 도메인 <code>abc.com</code>, 메서드 <code>GET, POST</code>, SQLi/XSS 자동 차단, 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) 설정</div>
+            <div><strong>1. 필터 대상 패턴 사전 컴파일:</strong> <code>sling.filter.pattern</code>을 <code>Pattern.compile()</code>로 메모리에 캐싱하여 런타임 컴파일 부하 제거</div>
+            <div><strong>2. 전역 기본 정책(defaultPolicy) 생성:</strong> 기본 도메인 <code>abc.com</code>, 메서드 <code>GET, POST</code>, 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) 설정</div>
             <div><strong>3. 검증기 토글 및 글로벌 강제 설정:</strong> <code>validator_*_enabled()</code> 플래그 및 <code>default.ignoreServletPolicies</code> 반영</div>
-            <div><strong>4. 바인딩 서블릿 동기화:</strong> 대기 중이던 <code>boundServlets</code>에 새로 로드된 <code>defaultPolicy</code>를 즉시 상속시켜 정책 갱신</div>
+            <div><strong>4. 번들별 .cfg.json 레지스트리 동기화:</strong> <code>EndpointPolicyRegistry</code>에 로드된 정책들에 <code>defaultPolicy</code>를 즉시 상속시켜 갱신</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- SLIDE 7: LIFECYCLE PHASE 2 (bindServlet) -->
+    <!-- SLIDE 7: LIFECYCLE PHASE 2 (EndpointPolicyRegistry) -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
           <span class="badge">06. LIFECYCLE — PHASE 2</span>
-          <div class="slide-title">필터 생명주기 및 처리 흐름도 [Phase 2: 서블릿 동적 감지 (bindServlet)]</div>
+          <div class="slide-title">필터 생명주기 및 처리 흐름도 [Phase 2: 번들별 .cfg.json 동적 감지 (EndpointPolicyRegistry)]</div>
         </div>
         <div class="page-num">07 / 19</div>
       </div>
@@ -624,18 +625,18 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;align-items:end;">
             <div>
               <svg width="36" height="44" viewBox="0 0 46 58"><circle cx="23" cy="10" r="8" fill="#fff" stroke="#1e293b" stroke-width="3"/><line x1="23" y1="18" x2="23" y2="38" stroke="#1e293b" stroke-width="3"/><line x1="8" y1="26" x2="38" y2="26" stroke="#1e293b" stroke-width="3"/><line x1="23" y1="38" x2="11" y2="54" stroke="#1e293b" stroke-width="3"/><line x1="23" y1="38" x2="35" y2="54" stroke="#1e293b" stroke-width="3"/></svg>
-              <div style="background:#1e293b;color:#fff;font-weight:700;font-size:12px;padding:6px;border-radius:6px;">AEM / OSGi Container<br/><span style="font-size:10px;color:#94a3b8;">actor OSGi</span></div>
+              <div style="background:#1e293b;color:#fff;font-weight:700;font-size:12px;padding:6px;border-radius:6px;">AEM / OSGi Container<br/><span style="font-size:10px;color:#94a3b8;">EndpointPolicyConfig~*.cfg.json</span></div>
             </div>
-            <div style="background:#2563eb;color:#fff;font-weight:700;font-size:12.5px;padding:10px 6px;border-radius:6px;">SecurityFilter<br/><span style="font-size:10px;font-weight:400;">participant Filter</span></div>
-            <div style="background:#0d9488;color:#fff;font-weight:700;font-size:12.5px;padding:10px 6px;border-radius:6px;">ServletSecurityConfig<br/><span style="font-size:10px;font-weight:400;">participant Config</span></div>
+            <div style="background:#2563eb;color:#fff;font-weight:700;font-size:12.5px;padding:10px 6px;border-radius:6px;">EndpointPolicyRegistry<br/><span style="font-size:10px;font-weight:400;">participant Registry</span></div>
+            <div style="background:#0d9488;color:#fff;font-weight:700;font-size:12.5px;padding:10px 6px;border-radius:6px;">SecurityFilter &amp; Config<br/><span style="font-size:10px;font-weight:400;">participant Filter</span></div>
           </div>
-          <div style="background:#fffbeb;border:1.5px solid #d97706;border-radius:6px;padding:5px;text-align:center;font-weight:700;font-size:12px;">[Phase 2: 서블릿 동적 감지 (bindServlet &amp; unbindServlet)] — OSGi @Reference</div>
+          <div style="background:#fffbeb;border:1.5px solid #d97706;border-radius:6px;padding:5px;text-align:center;font-weight:700;font-size:12px;">[Phase 2: 번들별 .cfg.json 동적 감지 (EndpointPolicyRegistryImpl)]</div>
           <div style="display:flex;flex-direction:column;gap:7px;font-size:12px;">
-            <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;"><strong>① OSGi ➔ Filter :</strong> <code>bindServlet(servlet, properties)</code> 실시간 호출</div>
-            <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:36px;"><strong>② Filter ➔ Filter (Self-Loop) :</strong> <code>isApplicableServlet(properties)</code> 필터 패턴 일치 검사 후 <code>boundServlets</code> 저장</div>
-            <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>③ Filter ➔ Config :</strong> 서블릿 property 파싱 + <code>defaultPolicy</code> 상속 후 동적 등록 (<code>registerDynamicPolicy</code>)</div>
-            <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Config ➔ Config (Self-Loop) :</strong> <code>rule.inheritFrom(defaultPolicy)</code> &amp; O(1) 해시 인덱싱</div>
-            <div style="background:#f8fafc;border-left:4px solid #475569;padding:6px 10px;border-radius:4px;"><strong>⑤~⑥ OSGi ➔ Filter ➔ Config :</strong> <code>unbindServlet()</code> 시 <code>unregisterDynamicPolicy(target)</code> 즉시 제거</div>
+            <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;"><strong>① OSGi ➔ Registry :</strong> <code>registerConfig(EndpointPolicyConfig, props)</code> 실시간 호출</div>
+            <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:36px;"><strong>② Registry ➔ Registry :</strong> <code>ServletPolicyRule.fromPolicyJsonEntry()</code>로 JSON 배열 항목 파싱</div>
+            <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>③ Registry ➔ Filter :</strong> 콜백 리스너 호출 ➔ <code>syncRegistryPolicies()</code> 실행</div>
+            <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>rule.inheritFrom(defaultPolicy)</code> &amp; O(1) 해시 인덱싱</div>
+            <div style="background:#f8fafc;border-left:4px solid #475569;padding:6px 10px;border-radius:4px;"><strong>⑤~⑥ OSGi ➔ Registry ➔ Filter :</strong> <code>.cfg.json</code> 수정/삭제 시 실시간 재병합 및 자동 반영</div>
           </div>
         </div>
         <div class="card" style="border-color:#0d9488;">
@@ -644,15 +645,15 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div style="background:#eff6ff;border:1px solid #2563eb;border-radius:6px;padding:8px;">
               <strong style="color:#2563eb;">[1] OSGi 전역 설정 (SecurityFilter.config ➔ defaultPolicy)</strong>
               <div>• <code>methods = [GET, POST]</code>, <code>defaultReferrer = "abc.com"</code></div>
-              <div>• <code>blockSqlInjection = true</code>, <code>blockXss = true</code>, <code>allowUndefinedParams = false</code></div>
+              <div>• <code>allowUndefinedParams = false</code></div>
               <div>• <code>params = {page, size, sort, order, lang, keyword}</code></div>
             </div>
             <div style="text-align:center;color:#0d9488;font-weight:800;">▼ inheritFrom(defaultPolicy) 기본 정책 자동 상속 ▼</div>
             <div style="background:#f0fdfa;border:1px solid #0d9488;border-radius:6px;padding:8px;">
-              <strong style="color:#0d9488;">[2] 개별 서블릿 정책 (target="/aemapi/member/register")</strong>
-              <div>• <code>methods = [POST]</code> ◀ 서블릿 설정으로 재정의(Override)</div>
-              <div>• <code>defaultReferrer = "abc.com"</code>, <code>blockSqlInjection/Xss = true</code> ◀ 자동 상속</div>
-              <div>• <code>params = { page, size, ...(상속) + userId, email(서블릿 전용 병합) }</code></div>
+              <strong style="color:#0d9488;">[2] 번들별 .cfg.json 정책 (target="/aemapi/user/contact")</strong>
+              <div>• <code>methods = [POST]</code> ◀ <code>.cfg.json</code> 설정으로 재정의(Override)</div>
+              <div>• <code>defaultReferrer = "abc.com"</code>, <code>allowUndefinedParams = false</code> ◀ 자동 상속</div>
+              <div>• <code>params = { page, size, ...(상속) + name, email(서블릿 전용 병합) }</code></div>
             </div>
           </div>
         </div>
@@ -687,7 +688,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div><strong>⑤ Filter ➔ Chain :</strong> 3. 3대 검증기 순차 실행 (Referer ➔ Method ➔ Param)</div>
               <div style="padding-left:12px;color:#0d9488;font-weight:700;">⑥ Chain ➔ Chain : ① RefererPolicyValidator (도메인 검증 ➔ 위반 시 403)</div>
               <div style="padding-left:12px;color:#2563eb;font-weight:700;">⑦ Chain ➔ Chain : ② MethodPolicyValidator (HTTP 메서드 검증 ➔ 위반 시 405)</div>
-              <div style="padding-left:12px;color:#4f46e5;font-weight:700;">⑧ Chain ➔ Chain : ③ ParamPolicyValidator (필수/길이/SQLi/XSS ➔ 위반 시 400)</div>
+              <div style="padding-left:12px;color:#4f46e5;font-weight:700;">⑧ Chain ➔ Chain : ③ ParamPolicyValidator (필수/길이/정규식/PathTraversal ➔ 위반 시 400)</div>
             </div>
             <div style="background:#f0fdf4;border:1.5px solid #16a34a;padding:5px 8px;border-radius:4px;">
               <strong style="color:#16a34a;">[alt] 모든 검증 통과 (PASS) :</strong> <strong>⑨ Chain -->> Filter</strong> 검증 성공 ➔ <strong>⑩ Filter ➔ Servlet</strong> <code>chain.doFilter()</code> 서블릿 실행
@@ -702,7 +703,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <div class="card-body" style="font-size:11.8px;gap:8px;">
             <div><strong>1. 1차 필터링 (Bypass):</strong> 전역 비활성(<code>enabled=false</code>) 또는 URI가 <code>sling.filter.pattern</code>과 미일치 시 즉시 통과</div>
             <div><strong>2. 대상 정책 조회:</strong> <code>findMatchingPolicy(request)</code>로 O(1) 조회 (개별 정책 없을 시 <code>defaultPolicy</code> 폴백)</div>
-            <div><strong>3. 3대 검증기 순차 실행:</strong> Referer(<code>SEC-40303</code>) ➔ Method(<code>SEC-40501</code>) ➔ Param(<code>SEC-40001~9</code>)</div>
+            <div><strong>3. 3대 검증기 순차 실행:</strong> Referer(<code>SEC-40303</code>) ➔ Method(<code>SEC-40501</code>) ➔ Param(<code>SEC-40001~7</code>)</div>
             <div><strong>4. 결과 처리:</strong> 통과 시 서블릿 실행 / 위반 시 <code>BlockedByConfig</code> + <code>AppliedServletPolicy</code> 로깅 후 즉시 차단</div>
           </div>
         </div>
@@ -720,7 +721,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
       </div>
       <div class="slide-body" style="gap:10px;">
         <div class="flow-row" style="grid-template-columns:repeat(5,1fr);gap:10px;">
-          <div class="flow-step" style="border-top-color:#0f172a;"><h4>SecurityFilter</h4><p>«루트 필터»<br/><code>enabled, boundServlets, validators</code></p></div>
+          <div class="flow-step" style="border-top-color:#0f172a;"><h4>SecurityFilter</h4><p>«루트 필터»<br/><code>enabled, policyRegistry, validators</code></p></div>
           <div class="flow-step" style="border-top-color:#0d9488;"><h4>ServletSecurityConfig</h4><p>«전체 정책 컨테이너»<br/><code>defaultPolicy, O(1) Maps</code></p></div>
           <div class="flow-step" style="border-top-color:#2563eb;"><h4>ServletPolicyRule</h4><p>«타겟별 보안 정책»<br/><code>methods, referrers, params</code></p></div>
           <div class="flow-step" style="border-top-color:#4f46e5;"><h4>ParamRule</h4><p>«파라미터 검증 단위»<br/><code>required, len, pattern</code></p></div>
@@ -731,10 +732,10 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <tr><th>계층 / 모델 클래스</th><th>역할 및 핵심 보유 데이터</th><th>데이터 원천 (Source)</th><th>핵심 아키텍처 특징</th></tr>
           </thead>
           <tbody>
-            <tr><td><strong>SecurityFilter</strong><br/>(루트 필터)</td><td>필터 활성화(<code>enabled</code>), 정규식(<code>sling.filter.pattern</code>), <code>boundServlets</code>, 3대 검증기 체인</td><td>OSGi Configuration Admin<br/>(<code>SecurityFilter.config</code>)</td><td>Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할 수행 및 동적 서블릿 감지</td></tr>
-            <tr><td><strong>ServletSecurityConfig</strong><br/>(전체 정책 컨테이너)</td><td>전역 기본 정책(<code>defaultPolicy</code>) 및 O(1) 고속 인덱스(<code>dynamicExactUriMap</code> 등)</td><td><code>SecurityFilter.config</code> +<br/>동적 바인딩 서블릿 프로퍼티</td><td>요청 인입 시 6단계 우선순위(URI ➔ ResourceType ➔ 정규식 ➔ Default)로 O(1) 고속 탐색</td></tr>
-            <tr><td><strong>ServletPolicyRule</strong><br/>(타겟별 보안 정책)</td><td>타겟 경로/리소스타입, 허용 Method, 허용 Referer, SQLi/XSS 차단 플래그, <code>params</code> 맵</td><td>서블릿 <code>@Component</code><br/><code>security.*</code> 프로퍼티</td><td><code>inheritFrom(defaultPolicy)</code>를 통해 미선언 기본값 및 공통 파라미터 자동 상속</td></tr>
-            <tr><td><strong>ParamRule</strong><br/>(파라미터 검증 단위)</td><td>필수 여부(<code>required</code>), 길이 제약(<code>min..max</code>), 사전 컴파일 정규식(<code>compiledPattern</code>)</td><td>서블릿 <code>security.params</code><br/>DSL 또는 JSON 속성</td><td>파라미터 값마다 길이, 정규식, PathTraversal·SQLi·XSS 공격 시그니처를 정밀 검증</td></tr>
+            <tr><td><strong>SecurityFilter</strong><br/>(루트 필터)</td><td>필터 활성화(<code>enabled</code>), 정규식(<code>sling.filter.pattern</code>), <code>EndpointPolicyRegistry</code>, 3대 검증기 체인</td><td>OSGi Configuration Admin<br/>(<code>SecurityFilter.config</code>)</td><td>Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할 수행 및 <code>EndpointPolicyRegistry</code> 연동</td></tr>
+            <tr><td><strong>ServletSecurityConfig</strong><br/>(전체 정책 컨테이너)</td><td>전역 기본 정책(<code>defaultPolicy</code>) 및 O(1) 고속 인덱스(<code>dynamicExactUriMap</code> 등)</td><td><code>SecurityFilter.config</code> +<br/><code>EndpointPolicyRegistry</code></td><td>요청 인입 시 6단계 우선순위(URI ➔ ResourceType ➔ 정규식 ➔ Default)로 O(1) 고속 탐색</td></tr>
+            <tr><td><strong>ServletPolicyRule</strong><br/>(타겟별 보안 정책)</td><td>타겟 경로/리소스타입, 허용 Method, 허용 Referer, <code>params</code> 맵</td><td>번들별 <code>.cfg.json</code><br/><code>policies</code> 배열 항목</td><td><code>inheritFrom(defaultPolicy)</code>를 통해 미선언 기본값 및 공통 파라미터 자동 상속</td></tr>
+            <tr><td><strong>ParamRule</strong><br/>(파라미터 검증 단위)</td><td>필수 여부(<code>required</code>), 길이 제약(<code>min..max</code>), 사전 컴파일 정규식(<code>compiledPattern</code>)</td><td><code>.cfg.json</code> 내 <code>params</code><br/>DSL 배열</td><td>파라미터 값마다 길이, 정규식, PathTraversal 공격 시그니처를 정밀 검증</td></tr>
             <tr><td><strong>ValidationResult</strong><br/>(검증 결과 DTO)</td><td>검증 성공 여부(<code>valid</code>), HTTP 상태코드(400/403/405), 에러코드(<code>SEC-XXXXX</code>), <code>BlockedByConfig</code></td><td>각 <code>PolicyValidator</code><br/>검증 실행 시 생성</td><td>검증 실패 시 상위 필터로 차단 설정 원인을 전달하여 즉각적인 Fail-Fast JSON 응답 생성</td></tr>
           </tbody>
         </table>
@@ -759,12 +760,12 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>- filterPattern : String</div>
               <div>- compiledFilterPattern : Pattern</div>
               <div>- servletSecurityConfig : Config</div>
-              <div>- boundServlets : Map&lt;Servlet,Map&gt;</div>
+              <div>- policyRegistry : EndpointPolicyRegistry</div>
               <div>- validators : List&lt;PolicyValidator&gt;</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ activate(Config) / deactivate()</div>
-              <div>+ bindServlet(Servlet, Map)</div>
-              <div>+ unbindServlet(Servlet, Map)</div>
+              <div>+ bindPolicyRegistry(Registry)</div>
+              <div>+ syncRegistryPolicies()</div>
               <div>+ doFilter(req, res, chain)</div>
               <div>- evaluatePoliciesAndFindActive()</div>
               <div>- handleSecurityViolation(...)</div>
@@ -781,9 +782,9 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             </div>
           </div>
           <div class="card" style="border-color:#475569;">
-            <div class="card-header" style="background:#475569;font-size:12px;padding:5px 10px;">«Utility» SecurityUtils</div>
+            <div class="card-header" style="background:#475569;font-size:12px;padding:5px 10px;">«Registry» EndpointPolicyRegistry</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:6px 10px;gap:2px;">
-              <div>+ getClientIp(req) / sanitizeForLog(s)</div>
+              <div>+ getPolicyRules() / registerConfig()</div>
             </div>
           </div>
         </div>
@@ -813,12 +814,11 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>- methods : List (upperMethods : Set)</div>
               <div>- defaultReferrer / allowedReferrers</div>
               <div>- allowUndefinedParams : Boolean</div>
-              <div>- blockSqlInjection / blockXss</div>
               <div>- params : Map&lt;String, ParamRule&gt;</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() / matches(req) : boolean</div>
               <div>+ inheritFrom(ServletPolicyRule)</div>
-              <div>+ fromOsgiProperties(props, default)</div>
+              <div>+ fromPolicyJsonEntry(json, src, def)</div>
               <div>+ parseSimpleParamSpec(spec)</div>
             </div>
           </div>
@@ -838,7 +838,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:6px 10px;gap:4px;">
               <div><strong style="color:#0d9488;">1. RefererPolicyValidator</strong><br/>+ isRefererAllowed() / extractHost()</div>
               <div><strong style="color:#2563eb;">2. MethodPolicyValidator</strong><br/>+ policy.isMethodAllowed(method)</div>
-              <div><strong style="color:#4f46e5;">3. ParamPolicyValidator</strong><br/>+ isPathTraversal / isSqlInjection / isXss</div>
+              <div><strong style="color:#4f46e5;">3. ParamPolicyValidator</strong><br/>+ isPathTraversal() / validateParam()</div>
             </div>
           </div>
           <div class="card" style="border-color:#4f46e5;flex:1;">
@@ -848,7 +848,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>- minLength / maxLength : Integer</div>
               <div>- pattern / compiledPattern : Pattern</div>
               <div>- allowPathTraversal : Boolean</div>
-              <div>- allowSqlInjection / allowXss</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() / validate(...) / toSummaryString()</div>
             </div>
@@ -880,8 +879,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>PARAM_TOO_SHORT/LONG (40003~4)</div>
               <div>PARAM_INVALID_FORMAT (SEC-40005)</div>
               <div>PARAM_PATH_TRAVERSAL (SEC-40007)</div>
-              <div>PARAM_SQL_INJECTION (SEC-40008)</div>
-              <div>PARAM_XSS (400, SEC-40009)</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ getHttpStatus() / getSubCode()</div>
             </div>
@@ -890,52 +887,52 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
       </div>
     </section>
 
-    <!-- SLIDE 7 -->
+    <!-- SLIDE 11 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">10. DYNAMIC BINDING & INHERITANCE</span>
-          <div class="slide-title">OSGi 동적 서블릿 바인딩 및 기본 정책 상속 메커니즘</div>
+          <span class="badge">10. REGISTRY & INHERITANCE</span>
+          <div class="slide-title">번들별 .cfg.json 정책 레지스트리 및 기본 정책 상속 메커니즘</div>
         </div>
         <div class="page-num">11 / 19</div>
       </div>
       <div class="slide-body">
         <div class="grid-2" style="max-height:245px;">
           <div class="card">
-            <div class="card-header">OSGi @Reference 동적 바인딩 & 로그 노이즈 차단</div>
+            <div class="card-header">번들별 .cfg.json 레지스트리 (EndpointPolicyRegistryImpl)</div>
             <div class="card-body">
-              <div>• <code>@Reference(service = Servlet.class, cardinality = MULTIPLE, policy = DYNAMIC)</code></div>
-              <div>• <code>sling.filter.pattern</code>과 일치하는 서블릿만 선별하여 <code>dynamicPolicies</code>에 자동 등록</div>
-              <div>• <strong>바인딩/언바인딩 디버그 로그 출력 차단</strong>: 수많은 서블릿이 바인딩/언바인딩될 때 로그가 폭증하지 않도록 <code>bindServlet</code>, <code>unbindServlet</code>, <code>registerDynamicPolicy</code> 내부 로그 완전 제거</div>
+              <div>• <code>@Reference(service = EndpointPolicyConfig.class, cardinality = MULTIPLE, policy = DYNAMIC)</code></div>
+              <div>• 각 번들의 <code>EndpointPolicyConfig~&lt;번들명&gt;.cfg.json</code> 파일 내 <code>policies</code> 배열을 자동 수집·병합</div>
+              <div>• <strong>실시간 콜백 동기화</strong>: 운영 중 <code>.cfg.json</code> 파일 추가/수정/삭제 시 <code>SecurityFilter</code>에 즉시 반영</div>
             </div>
           </div>
           <div class="card">
             <div class="card-header teal">기본 정책 상속 및 병합 (ServletPolicyRule.inheritFrom)</div>
             <div class="card-body">
-              <div>• 서블릿에 명시하지 않은 설정은 <code>SecurityFilter.config</code>의 <code>defaultPolicy</code>에서 자동 상속</div>
-              <div>• <strong>AllowedReferrers</strong>: 기본 <code>abc.com</code> + 서블릿 고유 허용 도메인 합집합 병합</div>
-              <div>• <strong>Params</strong>: 기본 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) + 서블릿 파라미터 병합 (동일 키는 서블릿 규칙 우선)</div>
+              <div>• <code>.cfg.json</code>에 명시하지 않은 설정은 <code>SecurityFilter.config</code>의 <code>defaultPolicy</code>에서 자동 상속</div>
+              <div>• <strong>AllowedReferrers</strong>: 기본 <code>abc.com</code> + 정책 고유 허용 도메인 합집합 병합</div>
+              <div>• <strong>Params</strong>: 기본 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) + 정책 파라미터 병합 (동일 키는 정책 규칙 우선)</div>
             </div>
           </div>
         </div>
         <div class="code-box" style="flex:1;">
-          <div class="code-header">기본 정책(Default Policy) + 개별 서블릿 프로퍼티 병합 예시</div>
+          <div class="code-header">기본 정책(Default Policy) + 번들별 .cfg.json 정책 병합 예시</div>
           <pre>[1] Default Policy (SecurityFilter.config)
-    methods=[GET, POST], defaultReferrer="abc.com", blockSqlInjection=true, blockXss=true, allowUndefinedParams=false,
+    methods=[GET, POST], defaultReferrer="abc.com", allowUndefinedParams=false,
     params={page: digits(5), size: digits(4), sort: alnum(30), order: asc|desc(4), lang: pattern, keyword: max(100)}
-        ▼  ServletPolicyRule.fromOsgiProperties(props, defaultPolicy) -> inheritFrom(defaultPolicy)
-[2] UserProfileServlet (@Component 프로퍼티)
-    sling.servlet.paths="/aemapi/user/profile", security.methods="GET", security.allowedReferrers="partner.abc.com",
-    security.params=["userId:required:alnum:4..20", "tab:optional:profile|settings|activity:15"]
+        ▼  ServletPolicyRule.fromPolicyJsonEntry(json, sourceId, defaultPolicy) -> inheritFrom(defaultPolicy)
+[2] EndpointPolicyConfig~core-member.cfg.json (policies 배열 항목)
+    { "target": "/aemapi/user/profile", "methods": ["GET"], "allowedReferrers": ["partner.abc.com"],
+      "params": ["memberId:required:alnum:4..20"] }
         ▼  최종 적용 정책 (AppliedServletPolicy)
-[3] source=com.example.security.servlets.UserProfileServlet, target=/aemapi/user/profile, methods=[GET],
-    allowedReferrers=[abc.com, partner.abc.com], blockSqlInjection=true, blockXss=true, allowUndefinedParams=false,
-    params={page, size, sort, order, lang, keyword, userId={required=true, len=4..20}, tab={required=false, len=0..15}}</pre>
+[3] source=EndpointPolicyConfig~core-member, target=/aemapi/user/profile, methods=[GET],
+    allowedReferrers=[abc.com, partner.abc.com], allowUndefinedParams=false,
+    params={page, size, sort, order, lang, keyword, memberId={required=true, len=4..20}}</pre>
         </div>
       </div>
     </section>
 
-    <!-- SLIDE 5 -->
+    <!-- SLIDE 12 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
@@ -950,14 +947,14 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-header">[Tier 1] 정적 설정 경로 O(1) 일치</div>
             <div class="card-body">
               <div><strong>조회 맵:</strong> <code>exactPathPolicies.get(uri)</code></div>
-              <div>OSGi 설정에 직접 정의된 정확한 URL 경로를 해시맵에서 O(1) 시간 복잡도로 즉시 조회합니다.</div>
+              <div>정적 설정에 정의된 정확한 URL 경로를 해시맵에서 O(1) 시간 복잡도로 즉시 조회합니다.</div>
             </div>
           </div>
           <div class="card">
-            <div class="card-header teal">[Tier 2] 동적 서블릿 경로 O(1) 일치</div>
+            <div class="card-header teal">[Tier 2] .cfg.json 등록 경로 O(1) 일치</div>
             <div class="card-body">
               <div><strong>조회 맵:</strong> <code>dynamicPolicies.get(uri)</code></div>
-              <div>동적 바인딩된 서블릿의 <code>sling.servlet.paths</code> 경로 및 Sling Selector/확장자 경계를 매칭합니다.</div>
+              <div><code>EndpointPolicyRegistry</code>에서 동기화된 <code>target</code> 경로 및 Sling Selector/확장자 경계를 O(1) 매칭합니다.</div>
             </div>
           </div>
           <div class="card">
@@ -975,10 +972,10 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             </div>
           </div>
           <div class="card">
-            <div class="card-header navy">[Tier 5] 동적 서블릿 정규식/계층 매칭</div>
+            <div class="card-header navy">[Tier 5] 동적 정책 정규식/계층 매칭</div>
             <div class="card-body">
-              <div><strong>조회 대상:</strong> <code>dynamicPolicies.values()</code></div>
-              <div>동적으로 바인딩된 서블릿 중 정규식 패턴 또는 리소스 타입 상속 계층을 가진 정책을 매칭합니다.</div>
+              <div><strong>조회 대상:</strong> <code>dynamicPatternPolicies</code></div>
+              <div><code>.cfg.json</code>에 등록된 정책 중 정규식 패턴 또는 리소스 타입 상속 계층을 가진 정책을 매칭합니다.</div>
             </div>
           </div>
           <div class="card">
@@ -992,7 +989,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
       </div>
     </section>
 
-    <!-- SLIDE 9 -->
+    <!-- SLIDE 13 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
@@ -1030,7 +1027,7 @@ if (StringUtils.isBlank(referer)) {
 if (isRefererAllowed(refererLower, refererHost, defaultReferrer)) {
     return ValidationResult.ok();
 }
-// 2순위: 서블릿별 allowedReferrers 목록 매칭 검사
+// 2순위: 정책별 allowedReferrers 목록 매칭 검사
 for (String allowed : policy.getAllowedReferrers()) {
     if (isRefererAllowed(refererLower, refererHost, allowed)) {
         return ValidationResult.ok();
@@ -1041,7 +1038,7 @@ for (String allowed : policy.getAllowedReferrers()) {
       </div>
     </section>
 
-    <!-- SLIDE 10 -->
+    <!-- SLIDE 14 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
@@ -1060,9 +1057,8 @@ for (String allowed : policy.getAllowedReferrers()) {
               <div>• <strong>O(1) 대문자 해시셋(<code>upperMethods</code>) 매칭:</strong></div>
               <div>&nbsp;&nbsp;- <code>init()</code> 시점에 대문자 불변 <code>Set&lt;String&gt;</code>으로 변환하여 매 요청 시 O(1) 조회</div>
               <div>• <strong>설정 우선순위:</strong></div>
-              <div>&nbsp;&nbsp;1) 다중 경로 서블릿의 경로별 설정 (<code>/aemapi/order/cancel:POST</code>)</div>
-              <div>&nbsp;&nbsp;2) 서블릿 공통 설정 (<code>security.methods=POST</code>)</div>
-              <div>&nbsp;&nbsp;3) 전역 기본 정책 폴백 (<code>default.methods=["GET","POST"]</code>)</div>
+              <div>&nbsp;&nbsp;1) <code>.cfg.json</code> 내 서블릿 경로(<code>target</code>)별 <code>methods</code> 설정</div>
+              <div>&nbsp;&nbsp;2) 전역 기본 정책 폴백 (<code>default.methods=["GET","POST"]</code>)</div>
               <div>• <strong>차단 응답:</strong> HTTP <code>405 Method Not Allowed</code> (<code>SEC-40501</code>)</div>
             </div>
           </div>
@@ -1090,17 +1086,17 @@ public ValidationResult validate(HttpServletRequest request,
       </div>
     </section>
 
-    <!-- SLIDE 11 -->
+    <!-- SLIDE 15 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
           <span class="badge">14. VALIDATOR #3</span>
-          <div class="slide-title">ParamPolicyValidator — 6단계 심층 파라미터 보안 검증</div>
+          <div class="slide-title">ParamPolicyValidator — 4단계 심층 파라미터 보안 검증</div>
         </div>
         <div class="page-num">15 / 19</div>
       </div>
       <div class="slide-body">
-        <div class="grid-3">
+        <div class="grid-2">
           <div class="card">
             <div class="card-header">Step 1. 필수 파라미터 검증 (SEC-40001)</div>
             <div class="card-body">
@@ -1117,23 +1113,11 @@ public ValidationResult validate(HttpServletRequest request,
           <div class="card">
             <div class="card-header indigo">Step 3. Path Traversal 차단 (SEC-40007)</div>
             <div class="card-body">
-              <div><code>../</code>, <code>..\</code>, <code>%2e%2e%2f</code>, 이중 인코딩(<code>%252e</code>), <code>..;/</code>, Null 바이트(<code>%00</code>) 경로 조작 공격 차단</div>
+              <div><code>../</code>, <code>..\</code>, <code>%2e%2e%2f</code>, 이중 인코딩(<code>%252e</code>), <code>..;/</code>, Null 바이트(<code>%00</code>) 경로 조작 공격 차단 (<code>allowPathTraversal=true</code> 시 예외 허용)</div>
             </div>
           </div>
           <div class="card">
-            <div class="card-header amber">Step 4. SQL & JCR2/XPath 차단 (SEC-40008)</div>
-            <div class="card-body">
-              <div>표준 SQLi(<code>UNION SELECT</code>, <code>OR 1=1</code>, <code>SLEEP</code>) 및 AEM JCR-SQL2(<code>ISDESCENDANTNODE</code>) · XPath(<code>/jcr:root/</code>) 차단</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header red">Step 5. XSS 공격 패턴 차단 (SEC-40009)</div>
-            <div class="card-body">
-              <div><code>&lt;script&gt;</code>, <code>onerror=</code>, <code>javascript:</code>, <code>eval()</code>, HTML 엔티티 인코딩(<code>&amp;lt;script&amp;gt;</code>) 우회 공격 차단</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header green">Step 6. 길이 & 정규식 검증 (SEC-40003~5)</div>
+            <div class="card-header green">Step 4. 길이 & 정규식 검증 (SEC-40003~5)</div>
             <div class="card-body">
               <div><code>minLength</code> / <code>maxLength</code> 글자 수 검사 및 사전 컴파일된 정규식(<code>compiledPattern</code>) 포맷 일치 검증</div>
             </div>
@@ -1142,12 +1126,12 @@ public ValidationResult validate(HttpServletRequest request,
       </div>
     </section>
 
-    <!-- SLIDE 12 -->
+    <!-- SLIDE 16 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
           <span class="badge">15. DEVELOPER GUIDE</span>
-          <div class="slide-title">간편 파라미터 DSL 문법 및 서블릿 적용 예제</div>
+          <div class="slide-title">간편 파라미터 DSL 문법 및 번들별 .cfg.json 설정 예제</div>
         </div>
         <div class="page-num">16 / 19</div>
       </div>
@@ -1168,33 +1152,36 @@ public ValidationResult validate(HttpServletRequest request,
             </div>
           </div>
           <div class="code-box">
-            <div class="code-header">단일 경로 및 다중 경로 서블릿 @Component 설정 예제</div>
-            <pre>// [1] 단일 경로 서블릿
-@Component(service = Servlet.class, property = {
-    "sling.servlet.paths=/aemapi/user/contact",
-    "security.methods=POST",
-    "security.allowedReferrers=partner.abc.com",
-    "security.params=name:required:2..20:korean",
-    "security.params=email:required:email:50"
-})
-public class UserContactServlet extends SlingAllMethodsServlet {}
-
-// [2] 다중 경로(Multi-Path) 서블릿 — 경로별 차등 정책
-@Component(service = Servlet.class, property = {
-    "sling.servlet.paths=/aemapi/order/inquiry",
-    "sling.servlet.paths=/aemapi/order/cancel",
-    "security.methods=/aemapi/order/inquiry:GET",
-    "security.methods=/aemapi/order/cancel:POST",
-    "security.params=orderId:required:pattern(^ORD_[0-9]{3,10}$):15",
-    "security.params=/aemapi/order/cancel:reason:optional:100"
-})
-public class MultiPathOrderServlet extends SlingAllMethodsServlet {}</pre>
+            <div class="code-header">EndpointPolicyConfig~core-order.cfg.json 설정 예제</div>
+            <pre>{
+  "enabled": true,
+  "bundle.id": "core-order",
+  "policies": [
+    {
+      "target": "/aemapi/order/inquiry",
+      "methods": ["GET", "POST"],
+      "allowedReferrers": ["shop.abc.com"],
+      "params": [
+        "orderId:required:alnum:8..20",
+        "includeHistory:optional:true|false:5"
+      ]
+    },
+    {
+      "target": "/aemapi/order/cancel",
+      "methods": ["POST"],
+      "params": [
+        "orderId:required:alnum:8..20",
+        "cancelReason:required:2..100"
+      ]
+    }
+  ]
+}</pre>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- SLIDE 13 -->
+    <!-- SLIDE 17 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
@@ -1220,8 +1207,6 @@ validator.param.enabled=B"true"
 default.enabled=B"true"
 default.referrer="abc.com"
 default.methods=["GET","POST"]
-default.blockSqlInjection=B"true"
-default.blockXss=B"true"
 default.allowUndefinedParams=B"false"
 default.params=[
   "page:optional:digits:5",
@@ -1247,7 +1232,7 @@ default.ignoreServletPolicies=B"false"</pre>
       </div>
     </section>
 
-    <!-- SLIDE 14 -->
+    <!-- SLIDE 18 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
@@ -1260,7 +1245,7 @@ default.ignoreServletPolicies=B"false"</pre>
         <div class="card" style="flex:0 0 auto;">
           <div class="card-header navy">로깅 아키텍처 핵심 요약</div>
           <div class="card-body" style="padding:12px 16px;">
-            <div>• <strong>바인딩/언바인딩 디버그 로그 출력 차단:</strong> <code>bindServlet</code> / <code>unbindServlet</code> 실행 시에는 로그를 남기지 않아 서블릿 대량 등록 시 로그 폭증 방지</div>
+            <div>• <strong>번들별 출처 추적(<code>source</code>):</strong> 각 정책이 어느 <code>EndpointPolicyConfig~&lt;번들명&gt;.cfg.json</code>에서 로드되었는지 로그에 명확히 표시</div>
             <div>• <strong>필터 차단 시 상세 원인 출력:</strong> 어떤 설정 규칙과 입력값 때문에 막혔는지(<code>BlockedByConfig</code>)와 서블릿에 적용된 현재 전체 보안 설정(<code>AppliedServletPolicy</code>)을 함께 출력</div>
           </div>
         </div>
@@ -1268,24 +1253,24 @@ default.ignoreServletPolicies=B"false"</pre>
           <div class="code-header">필터 통과 시(DEBUG) 및 필터에 의해 차단되었을 때(WARN & DEBUG) 로그 출력 예시</div>
           <pre>[1] 정상 통과 시 (DEBUG)
 --> [FILTER START] Evaluating request: Method=[POST], URI=[/aemapi/user/contact], Query=[null], ClientIP=[127.0.0.1]
-[PolicyMatch] Tier 2 (동적 바인딩 서블릿 경로 일치) 매칭 성공: URI=[/aemapi/user/contact] -> target=[/aemapi/user/contact]
+[PolicyMatch] Tier 2 (.cfg.json 등록 경로 일치) 매칭 성공: URI=[/aemapi/user/contact] -> target=[/aemapi/user/contact]
   [+] Validator [REFERER] PASSED | PassedConfig=[defaultReferrer='abc.com', allowedReferrers=[partner.abc.com], requestReferer='https://partner.abc.com/form']
   [+] Validator [METHOD]  PASSED | PassedConfig=[allowedMethods=[POST], requestMethod='POST']
-  [+] Validator [PARAM]   PASSED | PassedConfig=[allowUndefinedParams=false, blockSqlInjection=true, blockXss=true, ...]
+  [+] Validator [PARAM]   PASSED | PassedConfig=[allowUndefinedParams=false, ...]
 <-- [FILTER PASS] Request [POST /aemapi/user/contact] passed all security validations (Referer, Method, Param).
 
 [2] 보안 정책에 막혔을 때 (WARN — 차단된 설정 규칙 + 현재 서블릿 보안 설정 전체 출력)
 SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/user/contact], Validator=[PARAM], Status=[400], ErrorCode=[SEC-40003],
   Reason=[Parameter [name] length (1) < min (2)]
   | BlockedByConfig=[param=name, minLength=2, actualLength=1, rule={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}]
-  | AppliedServletPolicy=[source=com.example.security.servlets.UserContactServlet, target=/aemapi/user/contact, methods=[POST],
-      allowedReferrers=[abc.com, partner.abc.com], blockSqlInjection=true, blockXss=true, allowUndefinedParams=false,
+  | AppliedServletPolicy=[source=EndpointPolicyConfig~core-member, target=/aemapi/user/contact, methods=[POST],
+      allowedReferrers=[abc.com, partner.abc.com], allowUndefinedParams=false,
       params={name={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}, email={required=true, len=0..50, ...}}]</pre>
         </div>
       </div>
     </section>
 
-    <!-- SLIDE 15 -->
+    <!-- SLIDE 19 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
@@ -1309,8 +1294,6 @@ SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/u
               <tr><td><strong>SEC-40004</strong></td><td>400</td><td>PARAM</td><td>최대 길이(<code>maxLength</code>) 초과 (<code>param, maxLength, actualLength, rule</code>)</td></tr>
               <tr><td><strong>SEC-40005</strong></td><td>400</td><td>PARAM</td><td>정규식 패턴(<code>pattern</code>) 불일치 (<code>param, pattern, actualValue</code>)</td></tr>
               <tr><td><strong>SEC-40007</strong></td><td>400</td><td>PARAM</td><td>Path Traversal(<code>../</code>, <code>%2e%2e</code>, <code>%00</code>) 탐지 (<code>param, allowPathTraversal=false</code>)</td></tr>
-              <tr><td><strong>SEC-40008</strong></td><td>400</td><td>PARAM</td><td>SQL / JCR-SQL2 / XPath 인젝션 탐지 (<code>param, blockSqlInjection=true</code>)</td></tr>
-              <tr><td><strong>SEC-40009</strong></td><td>400</td><td>PARAM</td><td>XSS(<code>&lt;script&gt;</code>, <code>onerror=</code> 등) 공격 탐지 (<code>param, blockXss=true</code>)</td></tr>
             </tbody>
           </table>
           <div style="display:flex;flex-direction:column;gap:16px;">
@@ -1326,11 +1309,11 @@ Content-Type: application/json;charset=UTF-8
 }</pre>
             </div>
             <div class="card" style="flex:1;">
-              <div class="card-header green">단위 테스트 검증 완료 (26 / 26 PASS)</div>
+              <div class="card-header green">단위 테스트 검증 완료 (13 / 13 PASS)</div>
               <div class="card-body">
-                <div>• <code>SqlAndXssValidationTest</code> (13 PASS)</div>
                 <div>• <code>PathTraversalValidationTest</code> (8 PASS)</div>
-                <div>• <code>IgnoreServletPoliciesTest</code> (5 PASS)</div>
+                <div>• <code>IgnoreServletPoliciesTest</code> (3 PASS)</div>
+                <div>• <code>EndpointPolicyRegistryTest</code> (2 PASS)</div>
               </div>
             </div>
           </div>
