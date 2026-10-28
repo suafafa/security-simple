@@ -29,7 +29,6 @@ import org.slf4j.LoggerFactory;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
-import javax.servlet.Servlet;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
@@ -37,11 +36,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -140,9 +136,6 @@ public class SecurityFilter implements Filter {
     private volatile Pattern compiledFilterPattern = Pattern.compile(DEFAULT_FILTER_PATTERN);
     private volatile ServletSecurityConfig servletSecurityConfig;
 
-    // 동적으로 바인딩된 서블릿 추적 맵 (서블릿 인스턴스 -> OSGi 속성 맵)
-    private final Map<Servlet, Map<String, Object>> boundServlets = new ConcurrentHashMap<>();
-
     // EndpointPolicyRegistry(.cfg.json 번들 설정 수집기) 및 레지스트리 관리 타겟 집합
     private volatile EndpointPolicyRegistry endpointPolicyRegistry;
     private final Set<String> registryManagedTargets = ConcurrentHashMap.newKeySet();
@@ -197,7 +190,7 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * {@link EndpointPolicyRegistry}에 등록된 {@code .cfg.json} 기반 정책들을 현재 {@link ServletSecurityConfig}에 실시간 동기화합니다.
+     * {@link EndpointPolicyRegistry}에 등록된 {@code .cfg.json} 기반 정책들만 현재 {@link ServletSecurityConfig}에 실시간 동기화합니다.
      * 삭제된 {@code .cfg.json} 정책은 즉시 제거하고, 새로 추가되거나 수정된 정책은 기본 정책({@code defaultPolicy})을 상속받아 반영합니다.
      */
     public synchronized void syncRegistryPolicies() {
@@ -206,28 +199,13 @@ public class SecurityFilter implements Filter {
             return;
         }
 
-        // 1. 기존에 레지스트리를 통해 등록되었던 타겟들을 일단 제거
+        // 1. 기존에 레지스트리를 통해 등록되었던 타겟들을 제거
         for (String oldTarget : registryManagedTargets) {
             currentConfig.unregisterDynamicPolicy(oldTarget);
         }
         registryManagedTargets.clear();
 
-        // 2. 바인딩된 서블릿 어노테이션 기반 정책이 있다면 기본 복원
-        ServletPolicyRule defaultRule = currentConfig.getDefaultPolicy();
-        if (!boundServlets.isEmpty()) {
-            for (Map<String, Object> props : boundServlets.values()) {
-                if (isApplicableServlet(props)) {
-                    List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, defaultRule);
-                    for (ServletPolicyRule rule : rules) {
-                        if (matchesFilterPattern(rule.getTarget())) {
-                            currentConfig.registerDynamicPolicy(rule);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. EndpointPolicyRegistry(.cfg.json)의 정책들을 최우선으로 등록
+        // 2. EndpointPolicyRegistry(.cfg.json)에 등록된 정책들만 등록
         EndpointPolicyRegistry registry = this.endpointPolicyRegistry;
         if (registry != null) {
             List<ServletPolicyRule> regRules = registry.getAllPolicies();
@@ -242,99 +220,6 @@ public class SecurityFilter implements Filter {
                 }
             }
         }
-    }
-
-    /**
-     * OSGi 컨테이너에서 {@link Servlet} 서비스가 등록될 때 호출되는 동적 바인딩 콜백 메소드입니다.
-     * 서블릿의 경로 또는 resourceType이 {@code sling.filter.pattern}과 일치하는 경우에만 동적 보안 정책을 등록합니다.
-     * 주의: 서블릿이 다수 등록될 때 로그가 과도하게 발생하는 것을 방지하기 위해 이 메소드에서는 디버그 로그를 출력하지 않습니다.
-     *
-     * @param servlet    바인딩된 서블릿 인스턴스
-     * @param properties 서블릿의 OSGi 컴포넌트 프로퍼티 맵
-     */
-    @Reference(
-            service = Servlet.class,
-            cardinality = ReferenceCardinality.MULTIPLE,
-            policy = ReferencePolicy.DYNAMIC,
-            bind = "bindServlet",
-            unbind = "unbindServlet"
-    )
-    public void bindServlet(final Servlet servlet, final Map<String, Object> properties) {
-        if (servlet == null || properties == null) {
-            return;
-        }
-
-        // sling.filter.pattern과 경로 또는 resourceType이 일치하는 서블릿만 바인딩 (로그 출력 없음)
-        if (!isApplicableServlet(properties)) {
-            return;
-        }
-
-        boundServlets.put(servlet, properties);
-
-        if (servletSecurityConfig != null) {
-            List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(properties, servletSecurityConfig.getDefaultPolicy());
-            for (ServletPolicyRule rule : rules) {
-                if (matchesFilterPattern(rule.getTarget())
-                        && !registryManagedTargets.contains(rule.getTarget().trim())) {
-                    servletSecurityConfig.registerDynamicPolicy(rule);
-                }
-            }
-        }
-    }
-
-    /**
-     * OSGi 컨테이너에서 {@link Servlet} 서비스가 해제될 때 호출되는 동적 언바인딩 콜백 메소드입니다.
-     * 바인딩 시 등록되었던 서블릿의 동적 보안 정책을 제거합니다.
-     * 주의: 서블릿 언바인딩 시에도 로그 폭증을 방지하기 위해 디버그 로그를 출력하지 않습니다.
-     *
-     * @param servlet    언바인딩된 서블릿 인스턴스
-     * @param properties 서블릿의 OSGi 컴포넌트 프로퍼티 맵
-     */
-    public void unbindServlet(final Servlet servlet, final Map<String, Object> properties) {
-        if (servlet == null) {
-            return;
-        }
-
-        boolean wasBound = boundServlets.containsKey(servlet);
-        Map<String, Object> props = properties != null ? properties : boundServlets.remove(servlet);
-        boundServlets.remove(servlet);
-
-        if (!wasBound && (props == null || !isApplicableServlet(props))) {
-            return;
-        }
-
-        if (servletSecurityConfig != null && props != null) {
-            List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, null);
-            for (ServletPolicyRule rule : rules) {
-                if (matchesFilterPattern(rule.getTarget())
-                        && !registryManagedTargets.contains(rule.getTarget().trim())) {
-                    servletSecurityConfig.unregisterDynamicPolicy(rule.getTarget());
-                }
-            }
-        }
-    }
-
-    /**
-     * 서블릿의 경로({@code sling.servlet.paths}) 또는 리소스 타입({@code sling.servlet.resourceTypes})이
-     * 현재 필터의 {@code sling.filter.pattern}과 일치하는지 판별합니다.
-     *
-     * @param properties 서블릿의 OSGi 프로퍼티 맵
-     * @return 필터 적용 대상 서블릿이면 true, 아니면 false
-     */
-    public boolean isApplicableServlet(final Map<String, Object> properties) {
-        if (properties == null || properties.isEmpty()) {
-            return false;
-        }
-        List<String> targets = extractServletTargets(properties);
-        if (targets.isEmpty()) {
-            return false;
-        }
-        for (String target : targets) {
-            if (matchesFilterPattern(target)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -362,75 +247,8 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * OSGi 속성 맵에서 서블릿의 타겟 경로({@code sling.servlet.paths}) 및
-     * 리소스 타입({@code sling.servlet.resourceTypes}) 목록을 추출합니다.
-     *
-     * @param properties 서블릿의 OSGi 프로퍼티 맵
-     * @return 추출된 타겟 문자열 리스트
-     */
-    public List<String> extractServletTargets(final Map<String, Object> properties) {
-        if (properties == null || properties.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<String> targets = new ArrayList<>();
-        targets.addAll(extractStringListFromMap(properties, "sling.servlet.paths"));
-        targets.addAll(extractStringListFromMap(properties, "sling.servlet.resourceTypes"));
-        if (targets.isEmpty()) {
-            targets.addAll(extractStringListFromMap(properties, "service.description"));
-        }
-        return targets;
-    }
-
-    /**
-     * 프로퍼티 맵에서 지정된 키의 값을 문자열 리스트로 변환하여 반환합니다.
-     *
-     * @param map 프로퍼티 맵
-     * @param key 조회할 키
-     * @return 추출된 문자열 리스트
-     */
-    private static List<String> extractStringListFromMap(final Map<String, Object> map, final String key) {
-        if (map == null || !map.containsKey(key)) {
-            return Collections.emptyList();
-        }
-        Object val = map.get(key);
-        if (val instanceof String[]) {
-            List<String> list = new ArrayList<>();
-            for (String s : (String[]) val) {
-                if (StringUtils.isNotBlank(s)) {
-                    list.add(s.trim());
-                }
-            }
-            return list;
-        } else if (val instanceof Collection) {
-            List<String> list = new ArrayList<>();
-            for (Object item : (Collection<?>) val) {
-                if (item != null && StringUtils.isNotBlank(item.toString())) {
-                    list.add(item.toString().trim());
-                }
-            }
-            return list;
-        } else if (val instanceof String) {
-            String s = (String) val;
-            if (StringUtils.isNotBlank(s)) {
-                if (s.contains(",")) {
-                    String[] parts = s.split(",");
-                    List<String> list = new ArrayList<>(parts.length);
-                    for (String part : parts) {
-                        if (StringUtils.isNotBlank(part)) {
-                            list.add(part.trim());
-                        }
-                    }
-                    return list;
-                }
-                return Collections.singletonList(s.trim());
-            }
-        }
-        return Collections.emptyList();
-    }
-
-    /**
      * 필터의 {@code sling.filter.pattern} 정규식을 새로운 패턴으로 업데이트하고,
-     * 이미 바인딩된 서블릿 목록을 새 패턴 기준으로 재평가하여 일치하지 않는 동적 정책을 해제합니다.
+     * {@link EndpointPolicyRegistry}의 정책들을 새 패턴 기준으로 재동기화합니다.
      *
      * @param newPattern 새로 적용할 정규식 패턴 문자열
      */
@@ -443,24 +261,6 @@ public class SecurityFilter implements Filter {
             this.filterPattern = newPattern.trim();
             this.compiledFilterPattern = compiled;
             LOG.info("Updated SecurityFilter pattern to: {}", this.filterPattern);
-
-            // 새로운 필터 패턴에 맞춰 기존에 바인딩된 서블릿들을 재평가
-            if (!boundServlets.isEmpty()) {
-                Iterator<Map.Entry<Servlet, Map<String, Object>>> iterator = boundServlets.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    Map.Entry<Servlet, Map<String, Object>> entry = iterator.next();
-                    Map<String, Object> props = entry.getValue();
-                    if (!isApplicableServlet(props)) {
-                        if (servletSecurityConfig != null) {
-                            List<ServletPolicyRule> rules = ServletPolicyRule.fromOsgiProperties(props, null);
-                            for (ServletPolicyRule rule : rules) {
-                                servletSecurityConfig.unregisterDynamicPolicy(rule.getTarget());
-                            }
-                        }
-                        iterator.remove();
-                    }
-                }
-            }
             syncRegistryPolicies();
         } catch (Exception e) {
             LOG.error("Failed to compile sling.filter.pattern regex: {}", newPattern, e);
@@ -483,15 +283,6 @@ public class SecurityFilter implements Filter {
      */
     public Pattern getCompiledFilterPattern() {
         return compiledFilterPattern;
-    }
-
-    /**
-     * 현재 동적으로 바인딩되어 관리 중인 서블릿 맵(읽기 전용)을 반환합니다.
-     *
-     * @return 바인딩된 서블릿과 프로퍼티 맵
-     */
-    public Map<Servlet, Map<String, Object>> getBoundServlets() {
-        return Collections.unmodifiableMap(boundServlets);
     }
 
     /**
@@ -590,7 +381,6 @@ public class SecurityFilter implements Filter {
             registry.removeChangeListener(registryChangeListener);
         }
         registryManagedTargets.clear();
-        boundServlets.clear();
         LOG.info("SecurityFilter deactivated.");
     }
 
@@ -840,19 +630,6 @@ public class SecurityFilter implements Filter {
             String regSource = registry.getPolicySource(target);
             if (StringUtils.isNotBlank(regSource)) {
                 return regSource;
-            }
-        }
-        for (Map.Entry<Servlet, Map<String, Object>> entry : boundServlets.entrySet()) {
-            List<String> targets = extractServletTargets(entry.getValue());
-            for (String t : targets) {
-                if (target.trim().equalsIgnoreCase(t.trim())) {
-                    Servlet servlet = entry.getKey();
-                    Object compName = entry.getValue().get("component.name");
-                    if (compName != null && StringUtils.isNotBlank(compName.toString())) {
-                        return compName.toString().trim();
-                    }
-                    return servlet.getClass().getName();
-                }
             }
         }
         return "ConfiguredPolicy";

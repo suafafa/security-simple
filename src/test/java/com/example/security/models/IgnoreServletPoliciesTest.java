@@ -1,5 +1,8 @@
 package com.example.security.models;
 
+import com.example.security.filters.SecurityFilter;
+import com.example.security.registry.EndpointPolicyConfig;
+import com.example.security.registry.EndpointPolicyRegistryImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,8 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -66,29 +68,38 @@ public class IgnoreServletPoliciesTest {
     }
 
     @Test
-    @DisplayName("SecurityFilter: bindServlet은 정상 등록되지만, ignoreServletPolicies=true 시 findMatchingPolicy에서 defaultPolicy 강제")
-    void testBindingPreservedButEvaluationEnforcesDefaultPolicy() {
-        com.example.security.filters.SecurityFilter filter = new com.example.security.filters.SecurityFilter();
+    @DisplayName("SecurityFilter: EndpointPolicyRegistry(.cfg.json)는 정상 동기화되지만, ignoreServletPolicies=true 시 defaultPolicy 강제")
+    void testRegistrySyncedButEvaluationEnforcesDefaultPolicy() {
+        SecurityFilter filter = new SecurityFilter();
         ServletSecurityConfig secConfig = new ServletSecurityConfig();
         secConfig.setDefaultPolicy(defaultPolicy);
         secConfig.setIgnoreServletPolicies(true);
 
         try {
-            java.lang.reflect.Field f = com.example.security.filters.SecurityFilter.class.getDeclaredField("servletSecurityConfig");
+            java.lang.reflect.Field f = SecurityFilter.class.getDeclaredField("servletSecurityConfig");
             f.setAccessible(true);
             f.set(filter, secConfig);
         } catch (Exception e) {
             fail("Reflection setup failed: " + e.getMessage());
         }
 
-        javax.servlet.Servlet mockServlet = mock(javax.servlet.Servlet.class);
-        Map<String, Object> props = new HashMap<>();
-        props.put("sling.servlet.paths", "/aemapi/user/test");
-        props.put("security.defaultReferrer", "custom.com");
+        EndpointPolicyRegistryImpl registry = new EndpointPolicyRegistryImpl();
+        String json = "{\n" +
+                "  \"enabled\": true,\n" +
+                "  \"bundle.id\": \"core-member\",\n" +
+                "  \"policies\": [\n" +
+                "    {\n" +
+                "      \"target\": \"/aemapi/user/test\",\n" +
+                "      \"defaultReferrer\": \"custom.com\",\n" +
+                "      \"methods\": [\"POST\"]\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
+        EndpointPolicyConfig policyCfg = EndpointPolicyConfig.fromCfgJson("core-member", json);
+        registry.bindPolicyConfig(policyCfg, Collections.singletonMap("service.pid", policyCfg.getConfigPid()));
+        filter.bindPolicyRegistry(registry);
 
-        filter.bindServlet(mockServlet, props);
-
-        // 1. 서블릿 메타데이터 및 정책은 정상 바인딩됨 (설정 토글 지원을 위해 보존)
+        // 1. 레지스트리 정책은 정상 등록됨 (설정 토글 지원을 위해 보존)
         assertNotNull(secConfig.getDynamicPolicy("/aemapi/user/test"));
 
         // 2. 그러나 실제 요청 시에는 ignoreServletPolicies=true이므로 defaultPolicy만 반환됨
