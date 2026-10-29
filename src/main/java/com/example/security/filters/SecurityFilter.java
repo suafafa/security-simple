@@ -1,6 +1,7 @@
 package com.example.security.filters;
 
 import com.example.security.models.ParamRule;
+import com.example.security.models.PolicyMode;
 import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.registry.EndpointPolicyRegistry;
@@ -88,6 +89,12 @@ public class SecurityFilter implements Filter {
         boolean enabled() default true;
 
         @AttributeDefinition(
+                name = "Global Security Mode (ENFORCE / MONITOR)",
+                description = "Global enforcement mode. ENFORCE blocks violations; MONITOR logs violations as WARN and allows the request to proceed."
+        )
+        String mode() default "ENFORCE";
+
+        @AttributeDefinition(
                 name = "Sling Filter Pattern",
                 description = "Regex pattern matching request paths and target servlets handled by this filter"
         )
@@ -107,6 +114,12 @@ public class SecurityFilter implements Filter {
                 description = "List of validator names to disable globally (e.g. RUNMODE, CSRF, REFERER). Allows disabling newly added custom validators without changing Config interface."
         )
         String[] disabled_validators() default {};
+
+        @AttributeDefinition(
+                name = "Monitor-Only Validators (Names)",
+                description = "List of validator names to run in MONITOR mode globally (e.g. REFERER, RUNMODE). Violations will be logged as WARN without blocking."
+        )
+        String[] monitor_validators() default {};
 
         @AttributeDefinition(name = "Default Policy: Enabled", description = "Enable baseline default security policy for servlets")
         boolean default_enabled() default true;
@@ -397,6 +410,7 @@ public class SecurityFilter implements Filter {
             }
 
             if (config != null) {
+                newConfig.setMode(config.mode());
                 if (!config.validator_referer_enabled()) newConfig.setValidatorEnabled("REFERER", false);
                 if (!config.validator_method_enabled())  newConfig.setValidatorEnabled("METHOD", false);
                 if (!config.validator_param_enabled())   newConfig.setValidatorEnabled("PARAM", false);
@@ -404,6 +418,13 @@ public class SecurityFilter implements Filter {
                     for (String disabledName : config.disabled_validators()) {
                         if (StringUtils.isNotBlank(disabledName)) {
                             newConfig.setValidatorEnabled(disabledName.trim(), false);
+                        }
+                    }
+                }
+                if (config.monitor_validators() != null) {
+                    for (String monitorName : config.monitor_validators()) {
+                        if (StringUtils.isNotBlank(monitorName)) {
+                            newConfig.setValidatorMode(monitorName.trim(), PolicyMode.MONITOR);
                         }
                     }
                 }
@@ -583,7 +604,16 @@ public class SecurityFilter implements Filter {
             if (!result.isValid()) {
                 String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
                 String blockedConfigInfo = StringUtils.defaultIfBlank(result.getBlockedConfig(), result.getViolationDetail());
-                LOG.debug("  [!] Validator [{}] FAILED for URI [{}]: Status={}, Code={}, Message={} | BlockedByConfig=[{}] | AppliedServletPolicy=[{}]",
+                PolicyMode effectiveMode = validator.resolveMode(matchedPolicy, servletSecurityConfig);
+
+                // MONITOR 모드인 경우: 에러 응답을 반환하지 않고 WARN 감사 로그만 남긴 뒤 다음 검증기(또는 서블릿)로 계속 진행
+                if (effectiveMode == PolicyMode.MONITOR) {
+                    handleSecurityMonitorLog(request, matchedPolicy, validator.getName(), result.getStatusCode(),
+                            result.getSubCode(), result.getViolationDetail(), blockedConfigInfo, appliedPolicyInfo);
+                    continue;
+                }
+
+                LOG.debug("  [!] Validator [{}] FAILED (mode=ENFORCE) for URI [{}]: Status={}, Code={}, Message={} | BlockedByConfig=[{}] | AppliedServletPolicy=[{}]",
                         validator.getName(), request.getRequestURI(), result.getStatusCode(), result.getSubCode(),
                         result.getResponseMessage(), blockedConfigInfo, appliedPolicyInfo);
                 handleSecurityViolation(request, response, matchedPolicy, validator.getName(), result.getStatusCode(),
@@ -631,6 +661,41 @@ public class SecurityFilter implements Filter {
      */
     @Override
     public void destroy() {
+    }
+
+    /**
+     * {@link PolicyMode#MONITOR} 모드에서 보안 정책 위반이 감지되었을 때 호출됩니다.
+     * 클라이언트에 에러를 반환하지 않고, 위반 내역({@code BlockedByConfig})과 적용 정책({@code AppliedServletPolicy})을
+     * WARN 로그로 상세히 기록한 뒤 요청이 계속 진행되도록 합니다.
+     *
+     * @param request           감지된 HTTP 요청
+     * @param matchedPolicy     서블릿에 적용된 보안 정책 규칙
+     * @param validatorName     위반을 감지한 검증기 이름
+     * @param statusCode        차단 시 반환되었을 HTTP 상태 코드
+     * @param subCode           표준 보안 에러 서브 코드
+     * @param violationDetail   위반 사유 상세 설명
+     * @param blockedConfigInfo 위반을 유발한 구체적인 설정 규칙 및 입력값 정보
+     * @param appliedPolicyInfo 적용된 서블릿 전체 보안 설정 요약
+     */
+    private void handleSecurityMonitorLog(final HttpServletRequest request,
+                                          final ServletPolicyRule matchedPolicy,
+                                          final String validatorName,
+                                          final int statusCode,
+                                          final String subCode,
+                                          final String violationDetail,
+                                          final String blockedConfigInfo,
+                                          final String appliedPolicyInfo) {
+        String clientIp = SecurityUtils.getClientIp(request);
+        LOG.warn("SECURITY VIOLATION MONITORED (MODE=MONITOR, PASSED): Client IP=[{}], Method=[{}], URI=[{}], Validator=[{}], WouldBeStatus=[{}], ErrorCode=[{}], Reason=[{}] | BlockedByConfig=[{}] | AppliedServletPolicy=[{}]",
+                clientIp,
+                request != null ? request.getMethod() : "UNKNOWN",
+                request != null ? SecurityUtils.sanitizeForLog(request.getRequestURI()) : "UNKNOWN",
+                validatorName != null ? validatorName : "UNKNOWN",
+                statusCode,
+                subCode,
+                violationDetail,
+                blockedConfigInfo != null ? blockedConfigInfo : "UNKNOWN",
+                appliedPolicyInfo);
     }
 
     /**
