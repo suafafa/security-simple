@@ -4,6 +4,7 @@ import com.example.security.models.SecurityErrorCode;
 import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.utils.SecurityUtils;
+import org.osgi.service.component.annotations.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +13,7 @@ import javax.servlet.http.HttpServletRequest;
 /**
  * 요청된 HTTP 메서드가 서블릿 보안 정책에 허용된 메서드(GET, POST 등)인지 검증하는 모듈형 검증기입니다.
  */
+@Component(service = PolicyValidator.class, immediate = true)
 public class MethodPolicyValidator implements PolicyValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(MethodPolicyValidator.class);
@@ -24,6 +26,11 @@ public class MethodPolicyValidator implements PolicyValidator {
     @Override
     public String getName() {
         return "METHOD";
+    }
+
+    @Override
+    public int getOrder() {
+        return 20;
     }
 
     /**

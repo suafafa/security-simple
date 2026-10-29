@@ -1,28 +1,30 @@
 # 🛡️ AEM 6.5 Lightweight Security Filter (`security-simple`)
 
 AEM 6.5 서블릿을 위한 **경량 보안 필터(`SecurityFilter`)** 프로젝트입니다.  
-가장 핵심적인 **3대 보안 검증기(`RefererPolicyValidator`, `MethodPolicyValidator`, `ParamPolicyValidator`)**와 번들별 **`.cfg.json` 기반 정책 레지스트리(`EndpointPolicyRegistry`)** 구조로 가볍고 직관적으로 구성한 버전입니다.
+기본 제공되는 **4대 보안 검증기(`RunModePolicyValidator`, `RefererPolicyValidator`, `MethodPolicyValidator`, `ParamPolicyValidator`)**와 번들별 **`.cfg.json` 기반 정책 레지스트리(`EndpointPolicyRegistry`)**, 그리고 **플러그인 방식의 `PolicyValidator` 확장 아키텍처(`AbstractPolicyValidator` & `extensions`)**로 가볍고 직관적으로 구성한 버전입니다.
 
 ---
 
 ## 📊 0. 아키텍처 및 기능 기술서 (PPT / 프레젠테이션 문서)
 
-전체 시스템 아키텍처, 6단계 정책 매칭, 3대 Validator 동작 원리, DSL 문법, 로깅(`BlockedByConfig` / `AppliedServletPolicy`) 및 에러 코드 규격을 설명하는 프레젠테이션 문서가 [`docs/`](docs/) 디렉토리에 포함되어 있습니다:
+전체 시스템 아키텍처, 6단계 정책 매칭, 4대 Validator 및 커스텀 Validator 플러그인 확장 구조, DSL 문법, 로깅(`BlockedByConfig` / `AppliedServletPolicy`) 및 에러 코드 규격을 설명하는 프레젠테이션 문서가 [`docs/`](docs/) 디렉토리에 포함되어 있습니다:
 
-- 📑 **PowerPoint 문서 (`.pptx`)**: [`docs/AEM_Security_Simple_Architecture_Guide.pptx`](docs/AEM_Security_Simple_Architecture_Guide.pptx) (총 19슬라이드, 16:9 와이드스크린 — 시스템 아키텍처 다이어그램[심플/상세], 필터 생명주기 및 처리 흐름도[Phase 1·2·3 시퀀스 다이어그램], UML 클래스 다이어그램[심플/상세] 포함)
+- 📑 **PowerPoint 문서 (`.pptx`)**: [`docs/AEM_Security_Simple_Architecture_Guide.pptx`](docs/AEM_Security_Simple_Architecture_Guide.pptx) (총 20슬라이드, 16:9 와이드스크린 — 시스템 아키텍처 다이어그램[심플/상세], 필터 생명주기 및 처리 흐름도[Phase 1·2·3 시퀀스 다이어그램], UML 클래스 다이어그램[심플/상세], 플러그인 Validator 확장 & `RunModePolicyValidator` 가이드 포함)
 - 🌐 **웹 슬라이드 덱 (`.html`)**: [`docs/AEM_Security_Simple_Presentation.html`](docs/AEM_Security_Simple_Presentation.html) (브라우저에서 바로 열람 및 방향키 `←`/`→` 이동, `Cmd+P` PDF 인쇄 지원)
 
 ---
 
-## 📌 1. 핵심 3대 Validator 구성 및 실행 순서
+## 📌 1. 핵심 4대 Validator 구성 및 플러그인 실행 순서
 
-필터 체인은 `sling.filter.pattern`(기본값: `(/aemapi/.*|/sysapi/.*)`)과 일치하는 요청에 대해 아래 3개 Validator를 순차 실행합니다:
+필터 체인은 `sling.filter.pattern`(기본값: `(/aemapi/.*|/sysapi/.*)`)과 일치하는 요청에 대해 `PolicyValidator.getOrder()` 오름차순으로 Validator를 순차 실행합니다:
 
-| 순서 | Validator 클래스 | 검증기 코드명 | 주요 검증 내용 | 차단 시 응답 코드 |
+| 순서 (`getOrder()`) | Validator 클래스 | 검증기 코드명 | 주요 검증 내용 | 차단 시 응답 코드 |
 | :---: | :--- | :---: | :--- | :---: |
-| **1** | `RefererPolicyValidator` | `REFERER` | 요청 `Referer` 헤더가 기본 허용 도메인(`default.referrer`) 또는 정책의 `allowedReferrers`와 일치하는지 검증 | `403 Forbidden` (`SEC-40303`) |
-| **2** | `MethodPolicyValidator` | `METHOD` | 요청 HTTP Method(`GET`, `POST` 등)가 허용된 `methods` 목록에 포함되는지 검증 | `405 Method Not Allowed` (`SEC-40501`) |
-| **3** | `ParamPolicyValidator` | `PARAM` | 필수 여부(`required`), 미정의 파라미터 차단(`allowUndefinedParams=false`), Path Traversal(`SEC-40007`), 길이(`min..max`), 정규식(`pattern`) 검증 | `400 Bad Request` (`SEC-40001` ~ `SEC-40007`) |
+| **1 (`5`)** | `RunModePolicyValidator` | `RUNMODE` | 현재 AEM 인스턴스 RunMode(`author`, `publish`, `dev`, `prod` 등)가 정책의 `runModes`(허용) 및 `blockedRunModes`(차단) 규칙을 충족하는지 검증 | `403 Forbidden` (`SEC-40305`) |
+| **2 (`10`)** | `RefererPolicyValidator` | `REFERER` | 요청 `Referer` 헤더가 기본 허용 도메인(`default.referrer`) 또는 정책의 `allowedReferrers`와 일치하는지 검증 | `403 Forbidden` (`SEC-40303`) |
+| **3 (`20`)** | `MethodPolicyValidator` | `METHOD` | 요청 HTTP Method(`GET`, `POST` 등)가 허용된 `methods` 목록에 포함되는지 검증 | `405 Method Not Allowed` (`SEC-40501`) |
+| **4 (`30`)** | `ParamPolicyValidator` | `PARAM` | 필수 여부(`required`), 미정의 파라미터 차단(`allowUndefinedParams=false`), Path Traversal(`SEC-40007`), 길이(`min..max`), 정규식(`pattern`) 검증 | `400 Bad Request` (`SEC-40001` ~ `SEC-40007`) |
+| **확장 (`100`)** | `AbstractPolicyValidator` 상속 클래스 | 사용자 정의 | `@Component(service = PolicyValidator.class)` 선언만으로 `SecurityFilter` 및 `ServletPolicyRule` 수정 없이 자동 등록 | 사용자 정의 (`SEC-XXXXX`) |
 
 ---
 
@@ -59,10 +61,11 @@ sequenceDiagram
     Filter->>Config: 2. 요청 URI/ResourceType 매칭 정책 탐색 (evaluatePoliciesAndFindActive)
     Config-->>Filter: matchedPolicy 반환 (없으면 defaultPolicy)
 
-    Filter->>Chain: 3. 3대 검증기 순차 실행 (Referer -> Method -> Param)
-    Chain->>Chain: ① RefererPolicyValidator (도메인 검증 -> 위반 시 403)
-    Chain->>Chain: ② MethodPolicyValidator (HTTP 메서드 검증 -> 위반 시 405)
-    Chain->>Chain: ③ ParamPolicyValidator (필수/길이/정규식/PathTraversal -> 위반 시 400)
+    Filter->>Chain: 3. 검증기 체인 순차 실행 (getOrder() 오름차순: RunMode -> Referer -> Method -> Param)
+    Chain->>Chain: ① RunModePolicyValidator (인스턴스 RunMode 검증 -> 위반 시 403 SEC-40305)
+    Chain->>Chain: ② RefererPolicyValidator (도메인 검증 -> 위반 시 403 SEC-40303)
+    Chain->>Chain: ③ MethodPolicyValidator (HTTP 메서드 검증 -> 위반 시 405 SEC-40501)
+    Chain->>Chain: ④ ParamPolicyValidator (필수/길이/정규식/PathTraversal -> 위반 시 400 SEC-40001~7)
 
     alt 모든 검증 통과 (PASS)
         Chain-->>Filter: 검증 성공
@@ -87,10 +90,11 @@ OSGi 프레임워크가 컴포넌트를 활성화(`@Activate`)하거나 설정 �
 2. **대상 정책 조회 및 판정 (`evaluatePoliciesAndFindActive`)**:
    - `servletSecurityConfig.findMatchingPolicy(request)`를 통해 URI 및 Sling ResourceType과 일치하는 서블릿 정책을 조회합니다. 개별 정책이 없으면 `defaultPolicy`가 적용됩니다.
    - 해당 정책이 비활성화(`enabled=false`)되어 있으면 보안 검사를 생략하고 통과합니다.
-3. **3대 검증기 순차 실행 (Fail-Fast 체인)**:
-   - **① `RefererPolicyValidator`**: 신뢰 도메인 확인 (`403 Forbidden` / `SEC-40301`)
-   - **② `MethodPolicyValidator`**: 허용 HTTP Method 확인 (`405 Method Not Allowed` / `SEC-40501`)
-   - **③ `ParamPolicyValidator`**: 필수값, 미정의 파라미터, 길이, 정규식, Path Traversal 검증 (`400 Bad Request` / `SEC-40001` ~ `SEC-40007`)
+3. **검증기 체인 순차 실행 (Fail-Fast 체인, `getOrder()` 순)**:
+   - **① `RunModePolicyValidator` (`order=5`)**: 허용/차단 RunMode 확인 (`403 Forbidden` / `SEC-40305`)
+   - **② `RefererPolicyValidator` (`order=10`)**: 신뢰 도메인 확인 (`403 Forbidden` / `SEC-40303`)
+   - **③ `MethodPolicyValidator` (`order=20`)**: 허용 HTTP Method 확인 (`405 Method Not Allowed` / `SEC-40501`)
+   - **④ `ParamPolicyValidator` (`order=30`)**: 필수값, 미정의 파라미터, 길이, 정규식, Path Traversal 검증 (`400 Bad Request` / `SEC-40001` ~ `SEC-40007`)
 4. **결과 처리**:
    - **통과 시**: `chain.doFilter(request, response)`를 호출하여 대상 서블릿 비즈니스 로직을 정상 실행합니다.
    - **위반 시**: 서블릿 실행을 즉각 중단하고, `writeViolationResponse`를 통해 규격화된 에러 JSON과 HTTP 상태 코드를 클라이언트에 즉시 응답합니다.
@@ -385,7 +389,57 @@ default.ignoreServletPolicies=B"false"
 
 ---
 
-## 🚨 6. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
+## 🔌 6. 커스텀 `PolicyValidator` 손쉽게 추가하기 (플러그인 아키텍처 & `RunModePolicyValidator` 예제)
+
+기존 프레임워크(`SecurityFilter`, `ServletPolicyRule`, `SecurityErrorCode`)를 수정하지 않고 **클래스 1개만 새로 작성하면 자동으로 검증 체인에 등록**됩니다.
+
+### 6-1. 3대 확장 메커니즘
+1. **OSGi 동적 멀티 바인딩 (`@Reference(cardinality = MULTIPLE)`)**:
+   - `PolicyValidator` 구현체에 `@Component(service = PolicyValidator.class, immediate = true)`만 붙이면 `SecurityFilter.bindValidator()`가 자동으로 수집하고 `getOrder()` 순으로 정렬합니다.
+2. **스키마리스 확장 속성 (`ServletPolicyRule.extensions`)**:
+   - `.cfg.json`의 정책 객체에 선언된 모든 커스텀 키(예: `"runModes"`, `"blockedRunModes"`, `"requiredHeader"`)는 자동으로 `ServletPolicyRule`의 `extensions` 맵에 파싱·상속됩니다.
+   - Validator에서는 `policy.getExtensionLowerSet("runModes")`, `policy.getExtensionString("requiredHeader")`, `policy.getExtensionBoolean("...")` 헬퍼로 즉시 꺼내 쓸 수 있습니다.
+3. **`AbstractPolicyValidator` 추상 베이스 클래스**:
+   - 통과/차단 디버그 로깅과 `ValidationResult` 생성을 내장하여, 하위 클래스는 `doValidate()` 안에서 `pass()`, `block(...)`, `blockCustom(...)`만 호출하면 됩니다.
+
+### 6-2. 예제 1: `RunModePolicyValidator` (내장 구현)
+특정 API를 `author` 또는 `dev` RunMode에서만 허용하거나 `prod`에서 차단하고 싶을 때 `.cfg.json`에 `runModes` / `blockedRunModes`만 추가하면 됩니다:
+
+```json
+{
+  "target": "/aemapi/admin/reindex",
+  "runModes": ["author", "dev"],
+  "blockedRunModes": ["prod"],
+  "methods": ["POST"]
+}
+```
+
+### 6-3. 예제 2: 15줄로 새로운 커스텀 Validator 추가하기
+```java
+@Component(service = PolicyValidator.class, immediate = true)
+public class ApiKeyPolicyValidator extends AbstractPolicyValidator {
+
+    public ApiKeyPolicyValidator() {
+        super("API_KEY", 15); // 이름: "API_KEY", 실행 순서: 15 (Referer 다음, Method 이전)
+    }
+
+    @Override
+    protected ValidationResult doValidate(HttpServletRequest req, ServletPolicyRule policy, ServletSecurityConfig root) {
+        String requiredHeader = policy.getExtensionString("requiredHeader");
+        if (requiredHeader != null && req.getHeader(requiredHeader) == null) {
+            return blockCustom(policy, 401, "SEC-40101",
+                    "requiredHeader=" + requiredHeader,
+                    "Missing required header: " + requiredHeader,
+                    "Unauthorized: Missing header " + requiredHeader);
+        }
+        return pass();
+    }
+}
+```
+
+---
+
+## 🚨 7. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
 
 요청이 필터에 의해 차단되면 **어떤 설정 규칙과 입력값 때문에 막혔는지(`BlockedByConfig`)**와 **해당 서블릿에 적용된 전체 보안 설정(`AppliedServletPolicy`)**이 동시에 출력됩니다:
 

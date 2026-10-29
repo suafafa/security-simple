@@ -5,6 +5,7 @@ import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.utils.SecurityUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.osgi.service.component.annotations.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,6 +17,7 @@ import java.util.Set;
  * HTTP Referer 및 Origin 헤더가 기본 신뢰 도메인(defaultReferrer) 또는 서블릿 정책별 허용 도메인(allowedReferrers)과
  * 일치하는지 검증하는 모듈형 검증기입니다.
  */
+@Component(service = PolicyValidator.class, immediate = true)
 public class RefererPolicyValidator implements PolicyValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(RefererPolicyValidator.class);
@@ -28,6 +30,11 @@ public class RefererPolicyValidator implements PolicyValidator {
     @Override
     public String getName() {
         return "REFERER";
+    }
+
+    @Override
+    public int getOrder() {
+        return 10;
     }
 
     /**

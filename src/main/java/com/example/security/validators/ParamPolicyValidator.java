@@ -6,6 +6,7 @@ import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.utils.SecurityUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.osgi.service.component.annotations.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +21,7 @@ import java.util.Map;
  * - 최소/최대 글자 수(minLength, maxLength) 제한 검사
  * - 정규식 패턴(pattern) 일치 검사
  */
+@Component(service = PolicyValidator.class, immediate = true)
 public class ParamPolicyValidator implements PolicyValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(ParamPolicyValidator.class);
@@ -32,6 +34,11 @@ public class ParamPolicyValidator implements PolicyValidator {
     @Override
     public String getName() {
         return "PARAM";
+    }
+
+    @Override
+    public int getOrder() {
+        return 30;
     }
 
     /**

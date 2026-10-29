@@ -9,6 +9,7 @@ import com.example.security.validators.MethodPolicyValidator;
 import com.example.security.validators.ParamPolicyValidator;
 import com.example.security.validators.PolicyValidator;
 import com.example.security.validators.RefererPolicyValidator;
+import com.example.security.validators.RunModePolicyValidator;
 import com.example.security.validators.ValidationResult;
 import com.google.gson.Gson;
 import org.apache.commons.lang3.StringUtils;
@@ -37,8 +38,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +102,12 @@ public class SecurityFilter implements Filter {
         @AttributeDefinition(name = "Enable Param Validator", description = "Globally enable/disable Param validator")
         boolean validator_param_enabled() default true;
 
+        @AttributeDefinition(
+                name = "Disabled Validators (Names)",
+                description = "List of validator names to disable globally (e.g. RUNMODE, CSRF, REFERER). Allows disabling newly added custom validators without changing Config interface."
+        )
+        String[] disabled_validators() default {};
+
         @AttributeDefinition(name = "Default Policy: Enabled", description = "Enable baseline default security policy for servlets")
         boolean default_enabled() default true;
 
@@ -141,16 +150,91 @@ public class SecurityFilter implements Filter {
     private volatile EndpointPolicyRegistry endpointPolicyRegistry;
     private final Runnable registryChangeListener = this::syncRegistryPolicies;
 
-    // 핵심 3대 정책 검증기 (Referer -> Method -> Param)
-    private final RefererPolicyValidator refererPolicyValidator = new RefererPolicyValidator();
-    private final MethodPolicyValidator methodPolicyValidator = new MethodPolicyValidator();
-    private final ParamPolicyValidator paramPolicyValidator = new ParamPolicyValidator();
+    // 기본 내장 정책 검증기 및 동적 플러그인 검증기 레지스트리
+    private final Map<String, PolicyValidator> validatorMap = new ConcurrentHashMap<>();
+    private volatile List<PolicyValidator> validators = Collections.emptyList();
 
-    private final List<PolicyValidator> validators = Collections.unmodifiableList(Arrays.asList(
-            refererPolicyValidator,
-            methodPolicyValidator,
-            paramPolicyValidator
-    ));
+    /**
+     * 기본 생성자입니다.
+     * OSGi 런타임 외부(단위 테스트 등)에서 생성될 때에도 기본 검증기들이 즉시 동작하도록 등록합니다.
+     */
+    public SecurityFilter() {
+        registerValidator(new RunModePolicyValidator());
+        registerValidator(new RefererPolicyValidator());
+        registerValidator(new MethodPolicyValidator());
+        registerValidator(new ParamPolicyValidator());
+    }
+
+    /**
+     * OSGi 컨테이너에서 {@link PolicyValidator} 구현 컴포넌트들을 자동으로 발견하여 동적 바인딩합니다.
+     * 새로운 Validator 클래스를 추가할 때 {@code @Component(service = PolicyValidator.class)}만 선언하면
+     * {@code SecurityFilter} 코드 수정 없이 검증 체인에 자동 등록됩니다.
+     *
+     * @param validator 바인딩할 {@link PolicyValidator} 서비스
+     */
+    @Reference(
+            service = PolicyValidator.class,
+            cardinality = ReferenceCardinality.MULTIPLE,
+            policy = ReferencePolicy.DYNAMIC,
+            policyOption = ReferencePolicyOption.GREEDY,
+            bind = "bindValidator",
+            unbind = "unbindValidator"
+    )
+    public void bindValidator(final PolicyValidator validator) {
+        registerValidator(validator);
+    }
+
+    /**
+     * OSGi 컨테이너에서 {@link PolicyValidator} 서비스가 해제될 때 검증 체인에서 제거합니다.
+     *
+     * @param validator 언바인딩할 {@link PolicyValidator} 서비스
+     */
+    public void unbindValidator(final PolicyValidator validator) {
+        if (validator != null && StringUtils.isNotBlank(validator.getName())) {
+            unregisterValidator(validator.getName());
+        }
+    }
+
+    /**
+     * 새로운 {@link PolicyValidator}를 검증 체인에 등록하고 {@link PolicyValidator#getOrder()} 순으로 자동 정렬합니다.
+     *
+     * @param validator 등록할 검증기 인스턴스
+     */
+    public synchronized void registerValidator(final PolicyValidator validator) {
+        if (validator == null || StringUtils.isBlank(validator.getName())) {
+            return;
+        }
+        validatorMap.put(validator.getName().trim().toUpperCase(), validator);
+        rebuildValidatorChain();
+    }
+
+    /**
+     * 지정된 이름의 {@link PolicyValidator}를 검증 체인에서 제거합니다.
+     *
+     * @param validatorName 제거할 검증기 이름
+     */
+    public synchronized void unregisterValidator(final String validatorName) {
+        if (StringUtils.isBlank(validatorName)) {
+            return;
+        }
+        validatorMap.remove(validatorName.trim().toUpperCase());
+        rebuildValidatorChain();
+    }
+
+    /**
+     * 현재 등록된 검증기 목록(읽기 전용, {@code getOrder()} 오름차순 정렬)을 반환합니다.
+     *
+     * @return 정렬된 {@link PolicyValidator} 리스트
+     */
+    public List<PolicyValidator> getValidators() {
+        return validators;
+    }
+
+    private synchronized void rebuildValidatorChain() {
+        List<PolicyValidator> sorted = new ArrayList<>(validatorMap.values());
+        sorted.sort(Comparator.comparingInt(PolicyValidator::getOrder).thenComparing(PolicyValidator::getName));
+        this.validators = Collections.unmodifiableList(sorted);
+    }
 
     /**
      * 번들별 {@code .cfg.json} 파일들을 수집하는 {@link EndpointPolicyRegistry} 서비스를 동적 바인딩합니다.
@@ -316,6 +400,13 @@ public class SecurityFilter implements Filter {
                 if (!config.validator_referer_enabled()) newConfig.setValidatorEnabled("REFERER", false);
                 if (!config.validator_method_enabled())  newConfig.setValidatorEnabled("METHOD", false);
                 if (!config.validator_param_enabled())   newConfig.setValidatorEnabled("PARAM", false);
+                if (config.disabled_validators() != null) {
+                    for (String disabledName : config.disabled_validators()) {
+                        if (StringUtils.isNotBlank(disabledName)) {
+                            newConfig.setValidatorEnabled(disabledName.trim(), false);
+                        }
+                    }
+                }
                 newConfig.setIgnoreServletPolicies(config.default_ignoreServletPolicies());
             }
 

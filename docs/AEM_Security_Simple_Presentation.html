@@ -219,27 +219,34 @@
           <span style="color:#60a5fa;font-size:34px;">아키텍처 설계 및 핵심 기능 기술서</span>
         </h1>
         <p style="margin-top:20px;font-size:17px;color:#cbd5e1;line-height:1.6;max-width:980px;">
-          <strong>Referer · HTTP Method · Parameter</strong> 3대 핵심 보안 검증기를 기반으로<br/>
+          <strong>RunMode · Referer · HTTP Method · Parameter</strong> 4대 보안 검증기 및 플러그인 확장 아키텍처를 기반으로<br/>
           번들별 <code>.cfg.json</code> 정책 레지스트리(<code>EndpointPolicyRegistry</code>), 기본 정책(Default Policy) 자동 상속, 단계별 디버그 및 차단 원인(<code>BlockedByConfig</code>) 상세 로깅을 제공하는 고성능 Sling 서블릿 보안 프레임워크
         </p>
       </div>
-      <div class="grid-3" style="max-height:210px;">
+      <div class="grid-3" style="grid-template-columns: repeat(4, 1fr); max-height:210px;">
+        <div class="card" style="background:#1e293b;border-color:#d97706;">
+          <div class="card-header amber">1. RunModePolicyValidator</div>
+          <div class="card-body" style="color:#e2e8f0;">
+            <div>• 인스턴스 RunMode(<code>author, publish, dev, prod</code>) 기반 접근 통제</div>
+            <div>• 플러그인 아키텍처 &amp; <code>extensions</code> 확장 검증 (<code>SEC-40305</code>)</div>
+          </div>
+        </div>
         <div class="card" style="background:#1e293b;border-color:#0d9488;">
-          <div class="card-header teal">1. RefererPolicyValidator</div>
+          <div class="card-header teal">2. RefererPolicyValidator</div>
           <div class="card-body" style="color:#e2e8f0;">
             <div>• 기본 신뢰 도메인(<code>abc.com</code>) 및 서블릿별 <code>allowedReferrers</code> 검증</div>
             <div>• 외부 악성 사이트 경유 CSRF 및 무단 API 호출 차단 (<code>SEC-40303</code>)</div>
           </div>
         </div>
         <div class="card" style="background:#1e293b;border-color:#2563eb;">
-          <div class="card-header">2. MethodPolicyValidator</div>
+          <div class="card-header">3. MethodPolicyValidator</div>
           <div class="card-body" style="color:#e2e8f0;">
             <div>• 허용된 HTTP Method 화이트리스트 O(1) Set 검증</div>
             <div>• 비인가 메소드(DELETE, PUT 등) 호출 원천 차단 (<code>SEC-40501</code>)</div>
           </div>
         </div>
         <div class="card" style="background:#1e293b;border-color:#4f46e5;">
-          <div class="card-header indigo">3. ParamPolicyValidator</div>
+          <div class="card-header indigo">4. ParamPolicyValidator</div>
           <div class="card-body" style="color:#e2e8f0;">
             <div>• 필수/미정의 파라미터 통제, 길이·정규식·DSL 검증</div>
             <div>• Path Traversal 경로 조작 방어 (<code>SEC-40001~7</code>)</div>
@@ -255,7 +262,7 @@
           <span class="badge">01. OVERVIEW</span>
           <div class="slide-title">추진 배경 및 경량화 아키텍처 설계 목표</div>
         </div>
-        <div class="page-num">02 / 19</div>
+        <div class="page-num">02 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-3">
@@ -304,7 +311,7 @@
           <span class="badge">02. ARCHITECTURE</span>
           <div class="slide-title">전체 시스템 아키텍처 및 요청 처리 파이프라인</div>
         </div>
-        <div class="page-num">03 / 19</div>
+        <div class="page-num">03 / 20</div>
       </div>
       <div class="slide-body">
         <div class="flow-row">
@@ -356,7 +363,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">03. ARCHITECTURE (SIMPLE)</span>
           <div class="slide-title">시스템 아키텍처 다이어그램 — 심플 버전 (Simple Overview)</div>
         </div>
-        <div class="page-num">04 / 19</div>
+        <div class="page-num">04 / 20</div>
       </div>
       <div class="slide-body" style="gap:12px;">
         <div class="grid-2" style="max-width:780px;margin:0 auto;width:100%;">
@@ -410,10 +417,11 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
                 <div style="color:#0d9488;font-weight:700;">• 미존재 시 defaultPolicy 폴백</div>
               </div>
               <div style="background:#eef2ff;border:1.5px solid #4f46e5;border-radius:8px;padding:10px;font-size:12px;">
-                <div style="background:#4f46e5;color:#fff;font-weight:700;padding:4px 8px;border-radius:5px;text-align:center;margin-bottom:8px;">STEP 3. 3대 검증기 체인</div>
-                <div style="color:#0d9488;font-weight:700;">① Referer (도메인 403)</div>
-                <div style="color:#2563eb;font-weight:700;">② Method (메소드 405)</div>
-                <div style="color:#4f46e5;font-weight:700;">③ Param (필수/길이/정규식/경로 400)</div>
+                <div style="background:#4f46e5;color:#fff;font-weight:700;padding:4px 8px;border-radius:5px;text-align:center;margin-bottom:8px;">STEP 3. 플러그인 검증기 체인</div>
+                <div style="color:#d97706;font-weight:700;">① RunMode (런모드 403)</div>
+                <div style="color:#0d9488;font-weight:700;">② Referer (도메인 403)</div>
+                <div style="color:#2563eb;font-weight:700;">③ Method (메소드 405)</div>
+                <div style="color:#4f46e5;font-weight:700;">④ Param (필수/길이/정규식/경로 400)</div>
               </div>
             </div>
           </div>
@@ -446,7 +454,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">04. ARCHITECTURE (DETAILED)</span>
           <div class="slide-title">전체 시스템 아키텍처 다이어그램 — 상세 버전 (Detailed Architecture)</div>
         </div>
-        <div class="page-num">05 / 19</div>
+        <div class="page-num">05 / 20</div>
       </div>
       <div class="slide-body" style="display:grid;grid-template-columns:1.1fr 3.6fr 1.2fr;gap:14px;">
         <!-- Left: Client & Block -->
@@ -577,7 +585,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">05. LIFECYCLE — PHASE 1</span>
           <div class="slide-title">필터 생명주기 및 처리 흐름도 [Phase 1: 기동 및 설정 로드 (activate)]</div>
         </div>
-        <div class="page-num">06 / 19</div>
+        <div class="page-num">06 / 20</div>
       </div>
       <div class="slide-body" style="display:grid;grid-template-columns:1.6fr 1.1fr;gap:14px;">
         <div class="card" style="padding:12px;gap:8px;justify-content:space-between;">
@@ -618,7 +626,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">06. LIFECYCLE — PHASE 2</span>
           <div class="slide-title">필터 생명주기 및 처리 흐름도 [Phase 2: 번들별 .cfg.json 동적 감지 (EndpointPolicyRegistry)]</div>
         </div>
-        <div class="page-num">07 / 19</div>
+        <div class="page-num">07 / 20</div>
       </div>
       <div class="slide-body" style="display:grid;grid-template-columns:1.5fr 1.2fr;gap:14px;">
         <div class="card" style="padding:12px;gap:8px;justify-content:space-between;">
@@ -667,7 +675,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">07. LIFECYCLE — PHASE 3</span>
           <div class="slide-title">필터 생명주기 및 처리 흐름도 [Phase 3: 실시간 요청 검증 (doFilter)]</div>
         </div>
-        <div class="page-num">08 / 19</div>
+        <div class="page-num">08 / 20</div>
       </div>
       <div class="slide-body" style="display:grid;grid-template-columns:1.6fr 1.1fr;gap:14px;">
         <div class="card" style="padding:12px;gap:6px;justify-content:space-between;">
@@ -717,7 +725,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">08. CLASS DIAGRAM (SIMPLE)</span>
           <div class="slide-title">핵심 클래스 다이어그램 — 심플 버전 (Core Data Model)</div>
         </div>
-        <div class="page-num">09 / 19</div>
+        <div class="page-num">09 / 20</div>
       </div>
       <div class="slide-body" style="gap:10px;">
         <div class="flow-row" style="grid-template-columns:repeat(5,1fr);gap:10px;">
@@ -749,7 +757,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">09. CLASS DIAGRAM (DETAILED)</span>
           <div class="slide-title">핵심 클래스 다이어그램 및 데이터 모델 관계도 — 상세 버전 (Full UML)</div>
         </div>
-        <div class="page-num">10 / 19</div>
+        <div class="page-num">10 / 20</div>
       </div>
       <div class="slide-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
         <div style="display:flex;flex-direction:column;gap:10px;">
@@ -869,9 +877,10 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>+ isValid() / getSubCode()</div>
             </div>
           </div>
-          <div class="card" style="border-color:#dc2626;flex:1;">
+            <div class="card" style="border-color:#dc2626;flex:1;">
             <div class="card-header red" style="font-size:12.5px;padding:6px 10px;">«Enum» SecurityErrorCode</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.8px;padding:8px 10px;gap:2px;">
+              <div>RUNMODE_NOT_ALLOWED (403, SEC-40305)</div>
               <div>REFERER_UNTRUSTED (403, SEC-40303)</div>
               <div>METHOD_NOT_ALLOWED (405, SEC-40501)</div>
               <div>PARAM_REQUIRED (400, SEC-40001)</div>
@@ -894,7 +903,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">10. REGISTRY & INHERITANCE</span>
           <div class="slide-title">번들별 .cfg.json 정책 레지스트리 및 기본 정책 상속 메커니즘</div>
         </div>
-        <div class="page-num">11 / 19</div>
+        <div class="page-num">11 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2" style="max-height:245px;">
@@ -939,7 +948,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">11. POLICY MATCHING ENGINE</span>
           <div class="slide-title">6단계(Tier 1~6) 우선순위 기반 고속 정책 매칭 엔진</div>
         </div>
-        <div class="page-num">12 / 19</div>
+        <div class="page-num">12 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-3">
@@ -996,7 +1005,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <span class="badge">12. VALIDATOR #1</span>
           <div class="slide-title">RefererPolicyValidator — 출처(Referer) 검증 및 CSRF 방어</div>
         </div>
-        <div class="page-num">13 / 19</div>
+        <div class="page-num">13 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -1045,7 +1054,7 @@ for (String allowed : policy.getAllowedReferrers()) {
           <span class="badge">13. VALIDATOR #2</span>
           <div class="slide-title">MethodPolicyValidator — HTTP Method 화이트리스트 통제</div>
         </div>
-        <div class="page-num">14 / 19</div>
+        <div class="page-num">14 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -1093,7 +1102,7 @@ public ValidationResult validate(HttpServletRequest request,
           <span class="badge">14. VALIDATOR #3</span>
           <div class="slide-title">ParamPolicyValidator — 4단계 심층 파라미터 보안 검증</div>
         </div>
-        <div class="page-num">15 / 19</div>
+        <div class="page-num">15 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -1126,14 +1135,65 @@ public ValidationResult validate(HttpServletRequest request,
       </div>
     </section>
 
-    <!-- SLIDE 16 -->
+    <!-- SLIDE 16: PLUGIN VALIDATOR ARCHITECTURE & RUNMODE EXAMPLE -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">15. DEVELOPER GUIDE</span>
+          <span class="badge">15. PLUGIN VALIDATOR &amp; RUNMODE</span>
+          <div class="slide-title">플러그인 방식의 PolicyValidator 손쉬운 추가 및 RunModePolicyValidator 예제</div>
+        </div>
+        <div class="page-num">16 / 20</div>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header amber">1. 클래스 1개 추가로 끝나는 3대 플러그인 확장 구조</div>
+            <div class="card-body">
+              <div>• <strong>① OSGi 동적 멀티 바인딩 &amp; <code>getOrder()</code> 자동 정렬:</strong></div>
+              <div>&nbsp;&nbsp;- <code>@Component(service = PolicyValidator.class)</code> 선언만으로 <code>SecurityFilter.bindValidator()</code>가 자동 수집 및 실행 순서 정렬 (<code>RUNMODE=5 ➔ REFERER=10 ➔ METHOD=20 ➔ PARAM=30</code>)</div>
+              <div>• <strong>② 모델 수정 없는 <code>ServletPolicyRule.extensions</code>:</strong></div>
+              <div>&nbsp;&nbsp;- <code>.cfg.json</code>에 선언된 커스텀 키(<code>runModes</code>, <code>blockedRunModes</code>, <code>requiredHeader</code> 등)를 <code>extensions</code> 맵에 자동 파싱·상속 (<code>policy.getExtensionLowerSet(...)</code> 제공)</div>
+              <div>• <strong>③ <code>AbstractPolicyValidator</code> 템플릿 클래스:</strong></div>
+              <div>&nbsp;&nbsp;- 로깅 및 결과 생성 보일러플레이트를 제거하여 <code>doValidate()</code>에서 <code>pass()</code> / <code>block()</code> / <code>blockCustom()</code>만 호출</div>
+            </div>
+          </div>
+          <div class="code-box">
+            <div class="code-header">RunModePolicyValidator 구현 및 .cfg.json 설정 예시</div>
+            <pre>@Component(service = PolicyValidator.class, immediate = true)
+public class RunModePolicyValidator extends AbstractPolicyValidator {
+    public RunModePolicyValidator() { super("RUNMODE", 5); }
+
+    @Override
+    protected ValidationResult doValidate(HttpServletRequest req,
+            ServletPolicyRule policy, ServletSecurityConfig root) {
+        Set&lt;String&gt; allowed = policy.getExtensionLowerSet("runModes");
+        Set&lt;String&gt; blocked = policy.getExtensionLowerSet("blockedRunModes");
+        Set&lt;String&gt; active  = resolveActiveRunModes(); // SlingSettingsService
+        // blocked 포함 시 또는 allowed 미일치 시 403 (SEC-40305) 즉시 차단
+        return block(policy, SecurityErrorCode.RUNMODE_NOT_ALLOWED, ...);
+    }
+}
+
+// EndpointPolicyConfig~core-admin.cfg.json
+{
+  "target": "/aemapi/admin/reindex",
+  "runModes": ["author", "dev"],
+  "blockedRunModes": ["prod"],
+  "methods": ["POST"]
+}</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 17 -->
+    <section class="slide">
+      <div class="slide-header">
+        <div class="header-left">
+          <span class="badge">16. DEVELOPER GUIDE</span>
           <div class="slide-title">간편 파라미터 DSL 문법 및 번들별 .cfg.json 설정 예제</div>
         </div>
-        <div class="page-num">16 / 19</div>
+        <div class="page-num">17 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -1181,14 +1241,14 @@ public ValidationResult validate(HttpServletRequest request,
       </div>
     </section>
 
-    <!-- SLIDE 17 -->
+    <!-- SLIDE 18 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">16. OSGI CONFIGURATION</span>
+          <span class="badge">17. OSGI CONFIGURATION</span>
           <div class="slide-title">OSGi .config 전역 설정 구조 및 무중단 복원력</div>
         </div>
-        <div class="page-num">17 / 19</div>
+        <div class="page-num">18 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2">
@@ -1232,14 +1292,14 @@ default.ignoreServletPolicies=B"false"</pre>
       </div>
     </section>
 
-    <!-- SLIDE 18 -->
+    <!-- SLIDE 19 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">17. OBSERVABILITY & LOGGING</span>
+          <span class="badge">18. OBSERVABILITY & LOGGING</span>
           <div class="slide-title">디버그 로깅 체계 및 차단 설정(BlockedByConfig) 상세 추적</div>
         </div>
-        <div class="page-num">18 / 19</div>
+        <div class="page-num">19 / 20</div>
       </div>
       <div class="slide-body">
         <div class="card" style="flex:0 0 auto;">
@@ -1270,14 +1330,14 @@ SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/u
       </div>
     </section>
 
-    <!-- SLIDE 19 -->
+    <!-- SLIDE 20 -->
     <section class="slide">
       <div class="slide-header">
         <div class="header-left">
-          <span class="badge">18. ERROR SPECIFICATION</span>
+          <span class="badge">19. ERROR SPECIFICATION</span>
           <div class="slide-title">표준 보안 에러 코드 체계 및 JSON 응답 규격</div>
         </div>
-        <div class="page-num">19 / 19</div>
+        <div class="page-num">20 / 20</div>
       </div>
       <div class="slide-body">
         <div class="grid-2" style="grid-template-columns: 1.75fr 1fr;">
@@ -1286,6 +1346,7 @@ SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/u
               <tr><th>에러 코드</th><th>HTTP</th><th>Validator</th><th>차단 사유 및 BlockedByConfig 출력 항목</th></tr>
             </thead>
             <tbody>
+              <tr><td><strong>SEC-40305</strong></td><td>403</td><td>RUNMODE</td><td>현재 인스턴스 RunMode가 허용 목록(<code>runModes</code>) 미일치 또는 차단 목록(<code>blockedRunModes</code>) 포함</td></tr>
               <tr><td><strong>SEC-40303</strong></td><td>403</td><td>REFERER</td><td>신뢰되지 않은 Referer 또는 헤더 누락 (<code>defaultReferrer, allowedReferrers, requestReferer</code>)</td></tr>
               <tr><td><strong>SEC-40501</strong></td><td>405</td><td>METHOD</td><td>허용되지 않은 HTTP Method 호출 (<code>allowedMethods, requestMethod</code>)</td></tr>
               <tr><td><strong>SEC-40001</strong></td><td>400</td><td>PARAM</td><td>필수(<code>required=true</code>) 파라미터 누락 (<code>param, required=true, actualValue=MISSING</code>)</td></tr>
@@ -1309,11 +1370,12 @@ Content-Type: application/json;charset=UTF-8
 }</pre>
             </div>
             <div class="card" style="flex:1;">
-              <div class="card-header green">단위 테스트 검증 완료 (13 / 13 PASS)</div>
+              <div class="card-header green">단위 테스트 검증 완료 (18 / 18 PASS)</div>
               <div class="card-body">
                 <div>• <code>PathTraversalValidationTest</code> (8 PASS)</div>
                 <div>• <code>IgnoreServletPoliciesTest</code> (3 PASS)</div>
-                <div>• <code>EndpointPolicyRegistryTest</code> (2 PASS)</div>
+                <div>• <code>EndpointPolicyRegistryTest</code> (3 PASS)</div>
+                <div>• <code>RunModePolicyValidatorTest</code> (4 PASS)</div>
               </div>
             </div>
           </div>

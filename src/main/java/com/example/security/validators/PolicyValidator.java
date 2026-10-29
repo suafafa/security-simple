@@ -11,9 +11,19 @@ import javax.servlet.http.HttpServletRequest;
 public interface PolicyValidator {
 
     /**
-     * 검증기의 고유 식별자 이름을 반환합니다 (예: "AUTH", "CSRF", "REFERER", "METHOD", "PARAM").
+     * 검증기의 고유 식별자 이름을 반환합니다 (예: "REFERER", "METHOD", "PARAM", "RUNMODE").
      */
     String getName();
+
+    /**
+     * 필터 체인 내에서 이 검증기가 실행될 우선순위(오름차순)를 반환합니다.
+     * 값이 작을수록 먼저 실행됩니다 (예: RUNMODE=5, REFERER=10, METHOD=20, PARAM=30, 기본값=100).
+     *
+     * @return 실행 순서 값 (작을수록 먼저 실행)
+     */
+    default int getOrder() {
+        return 100;
+    }
 
     /**
      * 루트 설정 및 개별 서블릿 정책의 On/Off 토글을 기반으로 현재 검증기의 활성화 여부를 판별합니다.

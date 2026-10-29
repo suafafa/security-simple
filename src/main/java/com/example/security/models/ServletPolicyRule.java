@@ -52,6 +52,27 @@ public class ServletPolicyRule {
     @SerializedName(value = "enabledValidators")
     private List<String> enabledValidators;
 
+    /**
+     * 커스텀 {@link com.example.security.validators.PolicyValidator} 플러그인이 {@code ServletPolicyRule} 클래스를
+     * 수정하지 않고도 {@code .cfg.json}에 정의된 추가 설정 속성(예: {@code runModes}, {@code csrfHeader}, {@code allowedIps})을
+     * 자유롭게 읽고 상속받을 수 있도록 보관하는 확장 속성 맵입니다.
+     */
+    @SerializedName(value = "extensions", alternate = {"options", "customOptions"})
+    private Map<String, Object> extensions;
+
+    // 기본 내장 필드 키 집합 (JSON 파싱 시 이 외의 사용자 정의 키는 자동으로 extensions에 저장됨)
+    private static final Set<String> BUILT_IN_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "target", "targets", "path", "paths", "sling.servlet.paths", "resourcetype", "resourcetypes",
+            "enabled", "methods", "allowedmethods", "security.methods",
+            "defaultreferrer", "defaultreferer", "default_referrer", "default_referer",
+            "allowedreferrers", "referrers", "security.referrers",
+            "allowundefinedparams", "allow_undefined_params", "security.allowundefinedparams",
+            "params", "parameters", "paramrules", "security.params",
+            "requiredparams", "required_params", "security.requiredparams", "required",
+            "validators", "validatorsettings", "disabledvalidators", "skipvalidators", "enabledvalidators",
+            "extensions", "options", "customoptions"
+    )));
+
     // 런타임 캐시 필드
     private transient Set<String> upperMethods;
     private transient Set<String> lowerAllowedReferrers;
@@ -437,6 +458,118 @@ public class ServletPolicyRule {
     }
 
     /**
+     * 커스텀 {@link com.example.security.validators.PolicyValidator}에서 사용할 확장 설정 맵을 반환합니다.
+     *
+     * @return 확장 설정 맵 (없으면 빈 Map)
+     */
+    public Map<String, Object> getExtensions() {
+        return extensions != null ? Collections.unmodifiableMap(extensions) : Collections.emptyMap();
+    }
+
+    /**
+     * 커스텀 확장 설정 맵을 설정합니다.
+     *
+     * @param extensions 설정할 확장 속성 맵
+     */
+    public void setExtensions(Map<String, Object> extensions) {
+        this.extensions = extensions != null ? new LinkedHashMap<>(extensions) : null;
+    }
+
+    /**
+     * 커스텀 확장 속성을 단일 키-값으로 추가합니다.
+     *
+     * @param key   속성 키 (예: "runModes")
+     * @param value 속성 값
+     */
+    public void putExtension(String key, Object value) {
+        if (StringUtils.isBlank(key) || value == null) {
+            return;
+        }
+        if (this.extensions == null) {
+            this.extensions = new LinkedHashMap<>();
+        }
+        this.extensions.put(key.trim(), value);
+    }
+
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 값을 문자열 리스트로 조회합니다.
+     * 배열, 컬렉션, 쉼표 구분 문자열 모두 자동으로 리스트로 변환해 주므로 신규 Validator에서 설정값을 손쉽게 꺼낼 수 있습니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록 (예: {@code "runModes", "allowedRunModes"})
+     * @return 추출된 문자열 리스트 (미설정 시 빈 리스트)
+     */
+    public List<String> getExtensionStringList(String... keys) {
+        if (extensions == null || extensions.isEmpty() || keys == null) {
+            return Collections.emptyList();
+        }
+        Map<String, Object> matchedMap = resolveCaseInsensitiveKeys(extensions, keys);
+        return extractStringList(matchedMap, keys);
+    }
+
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 값을 소문자 집합(Set)으로 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 소문자 문자열 Set (미설정 시 빈 Set)
+     */
+    public Set<String> getExtensionLowerSet(String... keys) {
+        List<String> list = getExtensionStringList(keys);
+        if (list.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> set = new LinkedHashSet<>();
+        for (String item : list) {
+            if (StringUtils.isNotBlank(item)) {
+                set.add(item.trim().toLowerCase());
+            }
+        }
+        return Collections.unmodifiableSet(set);
+    }
+
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들 중 일치하는 첫 번째 문자열 값을 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 문자열 (미설정 시 null)
+     */
+    public String getExtensionString(String... keys) {
+        List<String> list = getExtensionStringList(keys);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들 중 일치하는 Boolean 값을 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 Boolean 값 (미설정 시 null)
+     */
+    public Boolean getExtensionBoolean(String... keys) {
+        if (extensions == null || extensions.isEmpty() || keys == null) {
+            return null;
+        }
+        Map<String, Object> matchedMap = resolveCaseInsensitiveKeys(extensions, keys);
+        return extractBoolean(matchedMap, keys);
+    }
+
+    private static Map<String, Object> resolveCaseInsensitiveKeys(Map<String, Object> source, String... targetKeys) {
+        Map<String, Object> resolved = new LinkedHashMap<>();
+        for (String tk : targetKeys) {
+            if (tk == null) continue;
+            if (source.containsKey(tk)) {
+                resolved.put(tk, source.get(tk));
+            } else {
+                for (Map.Entry<String, Object> entry : source.entrySet()) {
+                    if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(tk)) {
+                        resolved.put(tk, entry.getValue());
+                        break;
+                    }
+                }
+            }
+        }
+        return resolved;
+    }
+
+    /**
      * 상위 정책(예: defaultPolicy)으로부터 기본 보안 정책 설정을 상속받습니다.
      * 현재 규칙에 명시적으로 설정된 속성이 항상 우선권을 가집니다.
      *
@@ -506,6 +639,19 @@ public class ServletPolicyRule {
             }
             this.params = merged;
         }
+
+        // 확장 속성(extensions) 상속: 자식 정책에 명시되지 않은 키만 부모(defaultPolicy)로부터 상속
+        if (parent.extensions != null && !parent.extensions.isEmpty()) {
+            if (this.extensions == null) {
+                this.extensions = new LinkedHashMap<>(parent.extensions);
+            } else {
+                for (Map.Entry<String, Object> entry : parent.extensions.entrySet()) {
+                    if (entry.getKey() != null && !this.extensions.containsKey(entry.getKey())) {
+                        this.extensions.put(entry.getKey(), entry.getValue());
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -521,6 +667,10 @@ public class ServletPolicyRule {
         this.defaultReferrer = other.defaultReferrer;
         this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
         this.allowUndefinedParams = other.allowUndefinedParams;
+        this.validators = other.validators;
+        this.disabledValidators = other.disabledValidators != null ? new ArrayList<>(other.disabledValidators) : null;
+        this.enabledValidators = other.enabledValidators != null ? new ArrayList<>(other.enabledValidators) : null;
+        this.extensions = other.extensions != null ? new LinkedHashMap<>(other.extensions) : null;
         if (other.params != null) {
             Map<String, ParamRule> copiedParams = new LinkedHashMap<>(other.params.size());
             for (Map.Entry<String, ParamRule> entry : other.params.entrySet()) {
@@ -590,6 +740,41 @@ public class ServletPolicyRule {
 
         if (!consolidatedParams.isEmpty()) {
             rule.setParams(consolidatedParams);
+        }
+
+        // 6. 개별 검증기 On/Off 설정 (disabledValidators, enabledValidators)
+        List<String> disabledVals = extractStringList(props, "disabledValidators", "skipValidators");
+        if (!disabledVals.isEmpty()) {
+            rule.disabledValidators = disabledVals;
+        }
+        List<String> enabledVals = extractStringList(props, "enabledValidators");
+        if (!enabledVals.isEmpty()) {
+            rule.enabledValidators = enabledVals;
+        }
+
+        // 7. 커스텀 Validator를 위한 확장 속성(extensions) 자동 수집
+        Map<String, Object> ext = new LinkedHashMap<>();
+        for (String extContainerKey : new String[]{"extensions", "options", "customOptions"}) {
+            Object rawExt = props.get(extContainerKey);
+            if (rawExt instanceof Map<?, ?>) {
+                for (Map.Entry<?, ?> e : ((Map<?, ?>) rawExt).entrySet()) {
+                    if (e.getKey() != null && e.getValue() != null) {
+                        ext.put(e.getKey().toString().trim(), e.getValue());
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, Object> entry : props.entrySet()) {
+            String key = entry.getKey();
+            if (StringUtils.isNotBlank(key) && entry.getValue() != null) {
+                String cleanKey = key.trim();
+                if (!BUILT_IN_KEYS.contains(cleanKey.toLowerCase())) {
+                    ext.put(cleanKey, entry.getValue());
+                }
+            }
+        }
+        if (!ext.isEmpty()) {
+            rule.setExtensions(ext);
         }
 
         return rule;
@@ -1203,6 +1388,9 @@ public class ServletPolicyRule {
             sb.append("}");
         } else {
             sb.append(", params={}");
+        }
+        if (extensions != null && !extensions.isEmpty()) {
+            sb.append(", extensions=").append(extensions);
         }
         return sb.toString();
     }

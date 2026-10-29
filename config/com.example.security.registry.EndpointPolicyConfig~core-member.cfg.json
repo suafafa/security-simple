@@ -16,6 +16,7 @@
     },
     {
       "target": "/aemapi/user/profile",
+      "runModes": ["author", "publish", "dev", "stage", "prod"],
       "methods": ["GET"],
       "params": [
         "userId:required:alnum:4..20",

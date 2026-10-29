@@ -6,8 +6,9 @@ package com.example.security.models;
  */
 public enum SecurityErrorCode {
 
-    // 403 Forbidden (Referer 검증 실패)
+    // 403 Forbidden (Referer 및 RunMode 검증 실패)
     REFERER_UNTRUSTED(403, "SEC-40303", "Forbidden: Invalid or untrusted Referer"),
+    RUNMODE_NOT_ALLOWED(403, "SEC-40305", "Forbidden: Endpoint is not permitted in current runmode"),
 
     // 405 Method Not Allowed (HTTP 메서드 제한)
     METHOD_NOT_ALLOWED(405, "SEC-40501", "Method Not Allowed: %s"),
