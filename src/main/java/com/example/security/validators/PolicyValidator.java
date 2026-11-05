@@ -45,37 +45,16 @@ public interface PolicyValidator {
     }
 
     /**
-     * 전체 설정({@link ServletSecurityConfig})과 개별 서블릿 정책({@link ServletPolicyRule})을 기반으로
-     * 이 검증기의 최종 실행 모드({@link PolicyMode#ENFORCE} 또는 {@link PolicyMode#MONITOR})를 판별합니다.
-     * <p>
-     * <b>우선순위 규칙 (전체 설정 우선):</b>
-     * <ol>
-     *   <li>전체 모드({@code rootConfig.getMode()})가 {@link PolicyMode#MONITOR}이면 무조건 {@code MONITOR} 반환</li>
-     *   <li>전체 검증기별 모드({@code rootConfig.getValidatorMode(name)})가 {@link PolicyMode#MONITOR}이면 {@code MONITOR} 반환</li>
-     *   <li>개별 서블릿 정책의 검증기 모드 또는 서블릿 모드({@code policy.getValidatorMode(name)})가 지정되어 있으면 해당 모드 반환</li>
-     *   <li>위 조건에 해당하지 않으면 기본값 {@link PolicyMode#ENFORCE} 반환</li>
-     * </ol>
+     * 전역 설정({@link ServletSecurityConfig#getMode()})을 기반으로
+     * 이 검증기의 실행 모드({@link PolicyMode#ENFORCE} 또는 {@link PolicyMode#MONITOR})를 판별합니다.
      *
      * @param policy     매칭된 서블릿 보안 정책 규칙
      * @param rootConfig 루트 서블릿 보안 설정
-     * @return 최종 적용할 {@link PolicyMode} ({@code ENFORCE} 또는 {@code MONITOR})
+     * @return 적용할 전역 {@link PolicyMode} ({@code ENFORCE} 또는 {@code MONITOR})
      */
     default PolicyMode resolveMode(ServletPolicyRule policy, ServletSecurityConfig rootConfig) {
-        String name = getName();
-        if (rootConfig != null) {
-            if (rootConfig.getMode() == PolicyMode.MONITOR) {
-                return PolicyMode.MONITOR;
-            }
-            PolicyMode rootValidatorMode = rootConfig.getValidatorMode(name);
-            if (rootValidatorMode == PolicyMode.MONITOR) {
-                return PolicyMode.MONITOR;
-            }
-        }
-        if (policy != null) {
-            PolicyMode policyValidatorMode = policy.getValidatorMode(name);
-            if (policyValidatorMode != null) {
-                return policyValidatorMode;
-            }
+        if (rootConfig != null && rootConfig.getMode() != null) {
+            return rootConfig.getMode();
         }
         return PolicyMode.ENFORCE;
     }

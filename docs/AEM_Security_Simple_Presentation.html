@@ -492,7 +492,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div style="background:#fff;border:1px solid #2563eb;border-radius:8px;padding:8px 10px;font-size:11.5px;">
                 <div style="background:#2563eb;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">OSGi OCD 전역 설정 (SecurityFilter.config)</div>
                 <div>• <code>enabled</code> / <code>sling.filter.pattern</code></div>
-                <div>• <code>disabled.validators</code> / <code>monitor.validators</code></div>
+                <div>• <code>mode</code> (<code>ENFORCE</code> / <code>MONITOR</code>) &amp; <code>disabled.validators</code></div>
                 <div>• <code>default.*</code> (<code>abc.com</code>, <code>GET/POST</code>, 공통 params)</div>
               </div>
               <div style="background:#fff;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
@@ -600,7 +600,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;"><strong>① OSGi ➔ Filter :</strong> <code>activate(Config config)</code> 호출</div>
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:36px;"><strong>② Filter ➔ Filter (Self-Loop) :</strong> <code>1. filterPattern 정규식 사전 컴파일</code> (<code>Pattern.compile()</code> 캐싱)</div>
             <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>③ Filter ➔ Config :</strong> <code>2. defaultPolicy (기본 정책) 생성 및 등록</code> (<code>buildDefaultPolicy</code>)</div>
-            <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 검증기 토글(disabled.validators / monitor.validators) 설정 반영</code></div>
+            <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 모드(mode) 및 비활성 검증기(disabled.validators) 설정 반영</code></div>
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>⑤ Filter ➔ Config :</strong> <code>4. EndpointPolicyRegistry(.cfg.json) 정책과 defaultPolicy 동기화</code> (<code>syncRegistryPolicies</code>)</div>
           </div>
           <div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:6px;padding:6px;text-align:center;font-weight:700;font-size:11.5px;color:#0f172a;">[무중단 복원력] 설정 파싱 예외 발생 시 <code>handleConfigFailure()</code>가 직전 정상 설정(Last Known Good) 유지</div>
@@ -610,7 +610,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <div class="card-body" style="font-size:12px;gap:8px;">
             <div><strong>1. 필터 대상 패턴 사전 컴파일:</strong> <code>sling.filter.pattern</code>을 <code>Pattern.compile()</code>로 메모리에 캐싱하여 런타임 컴파일 부하 제거</div>
             <div><strong>2. 전역 기본 정책(defaultPolicy) 생성:</strong> 기본 도메인 <code>abc.com</code>, 메서드 <code>GET, POST</code>, 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) 설정</div>
-            <div><strong>3. 검증기 비활성화 및 모니터링 설정:</strong> <code>disabled.validators</code> 및 <code>monitor.validators</code> 반영</div>
+            <div><strong>3. 전역 모드 및 검증기 비활성화 설정:</strong> <code>mode</code>(<code>ENFORCE/MONITOR</code>) 및 <code>disabled.validators</code> 반영</div>
             <div><strong>4. 번들별 .cfg.json 레지스트리 동기화:</strong> <code>EndpointPolicyRegistry</code>에 로드된 정책들에 <code>defaultPolicy</code>를 즉시 상속시켜 갱신</div>
           </div>
         </div>
@@ -729,7 +729,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
         <div class="flow-row" style="grid-template-columns:repeat(5,1fr);gap:10px;">
           <div class="flow-step" style="border-top-color:#0f172a;"><h4>SecurityFilter</h4><p>«루트 필터»<br/><code>enabled, endpointPolicyRegistry, validators</code></p></div>
           <div class="flow-step" style="border-top-color:#0d9488;"><h4>ServletSecurityConfig</h4><p>«전체 정책 컨테이너»<br/><code>mode, defaultPolicy, 단일 O(1) Maps</code></p></div>
-          <div class="flow-step" style="border-top-color:#2563eb;"><h4>ServletPolicyRule</h4><p>«타겟별 보안 정책»<br/><code>mode, methods, referrers, params, extensions</code></p></div>
+          <div class="flow-step" style="border-top-color:#2563eb;"><h4>ServletPolicyRule</h4><p>«타겟별 보안 정책»<br/><code>methods, referrers, params, extensions</code></p></div>
           <div class="flow-step" style="border-top-color:#4f46e5;"><h4>ParamRule</h4><p>«파라미터 검증 단위»<br/><code>required, len, pattern, allowPathTraversal</code></p></div>
           <div class="flow-step" style="border-top-color:#d97706;"><h4>ValidationResult</h4><p>«검증 결과 DTO»<br/><code>statusCode, subCode, blockedConfig</code></p></div>
         </div>
@@ -739,8 +739,8 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           </thead>
           <tbody>
             <tr><td><strong>SecurityFilter</strong><br/>(루트 필터)</td><td>필터 활성화(<code>enabled</code>), 정규식(<code>sling.filter.pattern</code>), <code>EndpointPolicyRegistry</code>, 4대 플러그인 검증기 체인</td><td>OSGi Configuration Admin<br/>(<code>SecurityFilter.config</code>)</td><td>Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할 수행, 레지스트리 동기화 및 <code>ENFORCE/MONITOR</code> 처리</td></tr>
-            <tr><td><strong>ServletSecurityConfig</strong><br/>(전체 정책 컨테이너)</td><td>전역 모드(<code>mode</code>), 기본 정책(<code>defaultPolicy</code>), 검증기 모드 맵, 단일 O(1) 인덱스(<code>exactUriMap</code>, <code>resourceTypeMap</code>, <code>patternPolicies</code>)</td><td><code>SecurityFilter.config</code> +<br/><code>EndpointPolicyRegistry(.cfg.json)</code></td><td>요청 인입 시 6단계 우선순위(URI ➔ BaseURI ➔ ResourceType ➔ 정규식 ➔ 접두사 ➔ Default)로 O(1) 고속 탐색</td></tr>
-            <tr><td><strong>ServletPolicyRule</strong><br/>(타겟별 보안 정책)</td><td>타겟 경로/리소스타입, 실행 모드(<code>mode</code>), 허용 Method/Referer, <code>params</code> 맵, 플러그인 확장(<code>extensions</code>)</td><td>번들별 <code>.cfg.json</code><br/><code>policies</code> 배열 항목</td><td><code>inheritFrom(defaultPolicy)</code>를 통해 미선언 기본값, 공통 파라미터(<code>default.params</code>) 및 <code>extensions</code> 자동 상속</td></tr>
+            <tr><td><strong>ServletSecurityConfig</strong><br/>(전체 정책 컨테이너)</td><td>전역 모드(<code>mode</code>), 기본 정책(<code>defaultPolicy</code>), 단일 O(1) 인덱스(<code>exactUriMap</code>, <code>resourceTypeMap</code>, <code>patternPolicies</code>)</td><td><code>SecurityFilter.config</code> +<br/><code>EndpointPolicyRegistry(.cfg.json)</code></td><td>요청 인입 시 6단계 우선순위(URI ➔ BaseURI ➔ ResourceType ➔ 정규식 ➔ 접두사 ➔ Default)로 O(1) 고속 탐색</td></tr>
+            <tr><td><strong>ServletPolicyRule</strong><br/>(타겟별 보안 정책)</td><td>타겟 경로/리소스타입, 허용 Method/Referer, <code>params</code> 맵, 플러그인 확장(<code>extensions</code>)</td><td>번들별 <code>.cfg.json</code><br/><code>policies</code> 배열 항목</td><td><code>inheritFrom(defaultPolicy)</code>를 통해 미선언 기본값, 공통 파라미터(<code>default.params</code>) 및 <code>extensions</code> 자동 상속</td></tr>
             <tr><td><strong>ParamRule</strong><br/>(파라미터 검증 단위)</td><td>필수 여부(<code>required</code>), 길이 제약(<code>min..max</code>), 사전 컴파일 정규식(<code>compiledPattern</code>), <code>allowPathTraversal</code></td><td><code>.cfg.json</code> 내 <code>params</code><br/>간편 DSL 또는 JSON 객체</td><td>파라미터 값마다 필수 여부, 길이, 정규식 포맷, PathTraversal 공격 시그니처(CWE-22)를 정밀 검증</td></tr>
             <tr><td><strong>ValidationResult</strong><br/>(검증 결과 DTO)</td><td>검증 성공 여부(<code>valid</code>), HTTP 상태코드(400/403/405), 표준/커스텀 에러코드(<code>SEC-XXXXX</code>), <code>BlockedByConfig</code></td><td>각 <code>PolicyValidator</code><br/>검증 실행 시 생성</td><td><code>ENFORCE</code> 모드 시 Fail-Fast JSON 차단 응답을 반환하고, <code>MONITOR</code> 모드 시 WARN 감사 로그만 기록 후 통과</td></tr>
           </tbody>
@@ -782,7 +782,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.2px;padding:6px 10px;gap:2px;">
               <div>+ enabled() : boolean / mode() : String = "ENFORCE"</div>
               <div>+ sling_filter_pattern() : String</div>
-              <div>+ disabled_validators() / monitor_validators() : String[]</div>
+              <div>+ disabled_validators() : String[]</div>
               <div>+ default_referrer() / default_methods() / default_params()</div>
             </div>
           </div>
@@ -806,27 +806,25 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>- exactUriMap : Map&lt;String, ServletPolicyRule&gt;</div>
               <div>- resourceTypeMap : Map&lt;String, ServletPolicyRule&gt;</div>
               <div>- patternPolicies : List&lt;ServletPolicyRule&gt;</div>
-              <div>- validatorStatusMap / validatorModeMap : Map</div>
+              <div>- validatorStatusMap : Map&lt;String, Boolean&gt;</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() : void / findMatchingPolicy(req) : Rule</div>
               <div>+ registerPolicy(rule) / unregisterPolicy(target)</div>
               <div>+ clearPolicies() : void</div>
-              <div>+ isValidatorEnabled(name) / getValidatorMode(name)</div>
+              <div>+ isValidatorEnabled(name) / getMode() : PolicyMode</div>
             </div>
           </div>
           <div class="card" style="border-color:#2563eb;flex:1;">
             <div class="card-header" style="font-size:12.5px;padding:6px 10px;">«Model» ServletPolicyRule</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:8px 10px;gap:2px;">
               <div>- target : String / enabled : Boolean</div>
-              <div>- mode : String (resolvedMode : PolicyMode)</div>
-              <div>- monitorValidators : List (validatorModeMap : Map)</div>
               <div>- methods : List (upperMethods : Set)</div>
               <div>- defaultReferrer / allowedReferrers / allowUndefinedParams</div>
               <div>- params : Map&lt;String, ParamRule&gt; / extensions : Map</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() / validate(errors) / matches(req) : boolean</div>
               <div>+ inheritFrom(ServletPolicyRule) / copyFrom(other)</div>
-              <div>+ getValidatorMode(name) / getExtensionLowerSet(keys...)</div>
+              <div>+ isValidatorEnabled(name) / getExtensionLowerSet(keys...)</div>
               <div>+ fromPolicyJsonEntry() / parseSimpleParamSpec(spec)</div>
             </div>
           </div>
@@ -1262,9 +1260,9 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
 enabled=B"true"
 sling.filter.pattern="(/aemapi/.*|/sysapi/.*)"
 
-# 2. 전역 Validator 비활성화 및 모니터링(MONITOR) 스위치
+# 2. 전역 모드 및 Validator 비활성화 스위치
+mode="ENFORCE"
 disabled.validators=[]
-monitor.validators=[]
 
 # 3. 기본 보안 정책 (Default Policy)
 default.enabled=B"true"
@@ -1370,12 +1368,12 @@ Content-Type: application/json;charset=UTF-8
 }</pre>
             </div>
             <div class="card" style="flex:1;">
-              <div class="card-header green">단위 테스트 검증 완료 (19 / 19 PASS)</div>
+              <div class="card-header green">단위 테스트 검증 완료 (18 / 18 PASS)</div>
               <div class="card-body">
                 <div>• <code>PathTraversalValidationTest</code> (8 PASS)</div>
                 <div>• <code>EndpointPolicyRegistryTest</code> (3 PASS)</div>
                 <div>• <code>RunModePolicyValidatorTest</code> (4 PASS)</div>
-                <div>• <code>PolicyModeExecutionTest</code> (4 PASS)</div>
+                <div>• <code>PolicyModeExecutionTest</code> (3 PASS)</div>
               </div>
             </div>
           </div>

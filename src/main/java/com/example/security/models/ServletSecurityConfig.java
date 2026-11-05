@@ -45,9 +45,6 @@ public class ServletSecurityConfig {
     // 런타임 검증기 활성화 상태 맵: 검증기 이름(대문자) -> Boolean
     private transient Map<String, Boolean> validatorStatusMap = Collections.emptyMap();
 
-    // 런타임 전역 검증기별 모드 맵: 검증기 이름(대문자) -> PolicyMode (ENFORCE / MONITOR)
-    private transient Map<String, PolicyMode> validatorModeMap = Collections.emptyMap();
-
     // 단일 O(1) 정책 인덱스 저장소 (.cfg.json 정책 등록용)
     private transient Map<String, ServletPolicyRule> exactUriMap = new ConcurrentHashMap<>();
     private transient Map<String, ServletPolicyRule> resourceTypeMap = new ConcurrentHashMap<>();
@@ -77,9 +74,6 @@ public class ServletSecurityConfig {
     public final void init() {
         Map<String, Boolean> map = validatorStatusMap != null ? new HashMap<>(validatorStatusMap) : new HashMap<>();
         this.validatorStatusMap = Collections.unmodifiableMap(map);
-
-        Map<String, PolicyMode> modeMap = validatorModeMap != null ? new HashMap<>(validatorModeMap) : new HashMap<>();
-        this.validatorModeMap = Collections.unmodifiableMap(modeMap);
 
         if (this.mode == null) {
             this.mode = PolicyMode.ENFORCE;
@@ -454,42 +448,5 @@ public class ServletSecurityConfig {
      */
     public void setMode(final String modeStr) {
         this.mode = PolicyMode.fromStringOrDefault(modeStr, PolicyMode.ENFORCE);
-    }
-
-    /**
-     * 특정 검증기에 대해 전역적으로 지정된 {@link PolicyMode}를 조회합니다.
-     *
-     * @param validatorName 검증기 이름 (예: "REFERER", "RUNMODE")
-     * @return 전역 지정된 {@link PolicyMode} (미지정 시 null)
-     */
-    public PolicyMode getValidatorMode(final String validatorName) {
-        if (validatorModeMap != null && StringUtils.isNotBlank(validatorName)) {
-            return validatorModeMap.get(validatorName.trim().toUpperCase());
-        }
-        return null;
-    }
-
-    /**
-     * 특정 검증기의 전역 {@link PolicyMode}({@code ENFORCE} 또는 {@code MONITOR})를 설정합니다.
-     *
-     * @param validatorName 검증기 이름
-     * @param validatorMode 설정할 모드
-     */
-    public void setValidatorMode(final String validatorName, final PolicyMode validatorMode) {
-        if (StringUtils.isBlank(validatorName) || validatorMode == null) {
-            return;
-        }
-        Map<String, PolicyMode> map = validatorModeMap != null ? new HashMap<>(validatorModeMap) : new HashMap<>();
-        map.put(validatorName.trim().toUpperCase(), validatorMode);
-        this.validatorModeMap = Collections.unmodifiableMap(map);
-    }
-
-    /**
-     * 전역 검증기별 실행 모드 맵을 반환합니다.
-     *
-     * @return 검증기 이름별 {@link PolicyMode} 맵
-     */
-    public Map<String, PolicyMode> getValidatorModeMap() {
-        return validatorModeMap != null ? validatorModeMap : Collections.emptyMap();
     }
 }

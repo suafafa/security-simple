@@ -106,12 +106,6 @@ public class SecurityFilter implements Filter {
         )
         String[] disabled_validators() default {};
 
-        @AttributeDefinition(
-                name = "Monitor-Only Validators (Names)",
-                description = "List of validator names to run in MONITOR mode globally (e.g. REFERER, RUNMODE). Violations will be logged as WARN without blocking."
-        )
-        String[] monitor_validators() default {};
-
         @AttributeDefinition(name = "Default Policy: Enabled", description = "Enable baseline default security policy for servlets")
         boolean default_enabled() default true;
 
@@ -400,13 +394,6 @@ public class SecurityFilter implements Filter {
                     for (String disabledName : config.disabled_validators()) {
                         if (StringUtils.isNotBlank(disabledName)) {
                             newConfig.setValidatorEnabled(disabledName.trim(), false);
-                        }
-                    }
-                }
-                if (config.monitor_validators() != null) {
-                    for (String monitorName : config.monitor_validators()) {
-                        if (StringUtils.isNotBlank(monitorName)) {
-                            newConfig.setValidatorMode(monitorName.trim(), PolicyMode.MONITOR);
                         }
                     }
                 }
