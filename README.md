@@ -244,8 +244,6 @@ default.params=[ \
   "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10", \
   "keyword:optional:100" \
 ]
-# 번들별 .cfg.json 정책을 무시하고 글로벌 defaultPolicy만 강제 적용할지 여부 (기본값: false)
-default.ignoreServletPolicies=B"false"
 ```
 
 ---

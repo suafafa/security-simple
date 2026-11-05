@@ -52,7 +52,6 @@ public interface PolicyValidator {
      * <ol>
      *   <li>전체 모드({@code rootConfig.getMode()})가 {@link PolicyMode#MONITOR}이면 무조건 {@code MONITOR} 반환</li>
      *   <li>전체 검증기별 모드({@code rootConfig.getValidatorMode(name)})가 {@link PolicyMode#MONITOR}이면 {@code MONITOR} 반환</li>
-     *   <li>전체 설정에서 {@code ignoreServletPolicies=true}이면 전체 모드({@code ENFORCE})를 강제 반환</li>
      *   <li>개별 서블릿 정책의 검증기 모드 또는 서블릿 모드({@code policy.getValidatorMode(name)})가 지정되어 있으면 해당 모드 반환</li>
      *   <li>위 조건에 해당하지 않으면 기본값 {@link PolicyMode#ENFORCE} 반환</li>
      * </ol>
@@ -70,9 +69,6 @@ public interface PolicyValidator {
             PolicyMode rootValidatorMode = rootConfig.getValidatorMode(name);
             if (rootValidatorMode == PolicyMode.MONITOR) {
                 return PolicyMode.MONITOR;
-            }
-            if (rootConfig.isIgnoreServletPolicies()) {
-                return rootValidatorMode != null ? rootValidatorMode : rootConfig.getMode();
             }
         }
         if (policy != null) {

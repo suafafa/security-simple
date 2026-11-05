@@ -42,12 +42,6 @@ public class ServletSecurityConfig {
     @SerializedName(value = "defaultPolicy", alternate = {"default", "globalPolicy"})
     private ServletPolicyRule defaultPolicy;
 
-    /**
-     * 개별 엔드포인트 정책(.cfg.json)을 무시하고 글로벌 defaultPolicy만 강제 적용할지 여부입니다.
-     */
-    @SerializedName("ignoreServletPolicies")
-    private Boolean ignoreServletPolicies = false;
-
     // 런타임 검증기 활성화 상태 맵: 검증기 이름(대문자) -> Boolean
     private transient Map<String, Boolean> validatorStatusMap = Collections.emptyMap();
 
@@ -153,15 +147,6 @@ public class ServletSecurityConfig {
      */
     public ServletPolicyRule findMatchingPolicy(final HttpServletRequest request) {
         if (request == null) {
-            return defaultPolicy;
-        }
-
-        // 글로벌 기본 정책(defaultPolicy) 강제 적용 모드인 경우 개별 정책 조회를 건너뜁니다.
-        if (isIgnoreServletPolicies()) {
-            if (defaultPolicy != null && LOG.isDebugEnabled()) {
-                LOG.debug("[정책 매칭: ignoreServletPolicies=true] 개별 정책을 무시하고 글로벌 defaultPolicy를 강제 적용합니다. URI=[{}]",
-                        request.getRequestURI());
-            }
             return defaultPolicy;
         }
 
@@ -402,24 +387,6 @@ public class ServletSecurityConfig {
      */
     public void setDefaultPolicy(ServletPolicyRule defaultPolicy) {
         this.defaultPolicy = defaultPolicy;
-    }
-
-    /**
-     * 개별 엔드포인트 정책(.cfg.json)을 무시하고 글로벌 defaultPolicy만 강제 적용할지 여부를 반환합니다.
-     *
-     * @return 글로벌 전용 정책 강제 시 true (기본값 false)
-     */
-    public boolean isIgnoreServletPolicies() {
-        return ignoreServletPolicies != null && ignoreServletPolicies;
-    }
-
-    /**
-     * 개별 엔드포인트 정책(.cfg.json)을 무시하고 글로벌 defaultPolicy만 강제 적용할지 여부를 설정합니다.
-     *
-     * @param ignoreServletPolicies 글로벌 전용 정책 강제 여부
-     */
-    public void setIgnoreServletPolicies(Boolean ignoreServletPolicies) {
-        this.ignoreServletPolicies = ignoreServletPolicies;
     }
 
     /**

@@ -494,7 +494,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
                 <div>• <code>enabled</code> / <code>sling.filter.pattern</code></div>
                 <div>• <code>disabled.validators</code> / <code>monitor.validators</code></div>
                 <div>• <code>default.*</code> (<code>abc.com</code>, <code>GET/POST</code>, 공통 params)</div>
-                <div>• <code>default.ignoreServletPolicies</code> (글로벌 강제)</div>
               </div>
               <div style="background:#fff;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
                 <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">번들별 .cfg.json 감지 (EndpointPolicyRegistry)</div>
@@ -517,7 +516,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
                 </div>
                 <div style="background:#f0fdfa;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
                   <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">Stage 2. 6단계 고속 정책 매칭 엔진 (ServletSecurityConfig)</div>
-                  <div>• <code>ignoreServletPolicies=true</code> 시 글로벌 <code>defaultPolicy</code> 즉시 반환</div>
                   <div>• Tier 1~2: Exact/Base URI <code>O(1)</code> | Tier 3: ResourceType <code>O(1)</code></div>
                   <div>• Tier 4~5: Regex/Prefix 매칭 | Tier 6: <code>defaultPolicy</code> 안전 폴백</div>
                 </div>
@@ -602,7 +600,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;"><strong>① OSGi ➔ Filter :</strong> <code>activate(Config config)</code> 호출</div>
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:36px;"><strong>② Filter ➔ Filter (Self-Loop) :</strong> <code>1. filterPattern 정규식 사전 컴파일</code> (<code>Pattern.compile()</code> 캐싱)</div>
             <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>③ Filter ➔ Config :</strong> <code>2. defaultPolicy (기본 정책) 생성 및 등록</code> (<code>buildDefaultPolicy</code>)</div>
-            <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 검증기 토글(Referer/Method/Param) 설정 &amp; ignoreServletPolicies 반영</code></div>
+            <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 검증기 토글(disabled.validators / monitor.validators) 설정 반영</code></div>
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>⑤ Filter ➔ Config :</strong> <code>4. EndpointPolicyRegistry(.cfg.json) 정책과 defaultPolicy 동기화</code> (<code>syncRegistryPolicies</code>)</div>
           </div>
           <div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:6px;padding:6px;text-align:center;font-weight:700;font-size:11.5px;color:#0f172a;">[무중단 복원력] 설정 파싱 예외 발생 시 <code>handleConfigFailure()</code>가 직전 정상 설정(Last Known Good) 유지</div>
@@ -612,7 +610,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <div class="card-body" style="font-size:12px;gap:8px;">
             <div><strong>1. 필터 대상 패턴 사전 컴파일:</strong> <code>sling.filter.pattern</code>을 <code>Pattern.compile()</code>로 메모리에 캐싱하여 런타임 컴파일 부하 제거</div>
             <div><strong>2. 전역 기본 정책(defaultPolicy) 생성:</strong> 기본 도메인 <code>abc.com</code>, 메서드 <code>GET, POST</code>, 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) 설정</div>
-            <div><strong>3. 검증기 토글 및 글로벌 강제 설정:</strong> <code>disabled.validators</code> / <code>monitor.validators</code> 및 <code>default.ignoreServletPolicies</code> 반영</div>
+            <div><strong>3. 검증기 비활성화 및 모니터링 설정:</strong> <code>disabled.validators</code> 및 <code>monitor.validators</code> 반영</div>
             <div><strong>4. 번들별 .cfg.json 레지스트리 동기화:</strong> <code>EndpointPolicyRegistry</code>에 로드된 정책들에 <code>defaultPolicy</code>를 즉시 상속시켜 갱신</div>
           </div>
         </div>
@@ -786,7 +784,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>+ sling_filter_pattern() : String</div>
               <div>+ disabled_validators() / monitor_validators() : String[]</div>
               <div>+ default_referrer() / default_methods() / default_params()</div>
-              <div>+ default_ignoreServletPolicies() : boolean</div>
             </div>
           </div>
           <div class="card" style="border-color:#475569;">
@@ -805,7 +802,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>- enabled : Boolean = true</div>
               <div>- mode : PolicyMode = PolicyMode.ENFORCE</div>
               <div>- defaultReferrer : String = "abc.com"</div>
-              <div>- ignoreServletPolicies : Boolean = false</div>
               <div>- defaultPolicy : ServletPolicyRule</div>
               <div>- exactUriMap : Map&lt;String, ServletPolicyRule&gt;</div>
               <div>- resourceTypeMap : Map&lt;String, ServletPolicyRule&gt;</div>
@@ -1282,10 +1278,7 @@ default.params=[
   "order:optional:asc|desc:4",
   "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10",
   "keyword:optional:100"
-]
-
-# 4. 글로벌 기본 정책 강제 적용 여부 (기본값: false)
-default.ignoreServletPolicies=B"false"</pre>
+]</pre>
           </div>
           <div class="card">
             <div class="card-header teal">OSGi .config 특징 및 장애 복원력 (Resilience)</div>
@@ -1377,12 +1370,12 @@ Content-Type: application/json;charset=UTF-8
 }</pre>
             </div>
             <div class="card" style="flex:1;">
-              <div class="card-header green">단위 테스트 검증 완료 (18 / 18 PASS)</div>
+              <div class="card-header green">단위 테스트 검증 완료 (19 / 19 PASS)</div>
               <div class="card-body">
                 <div>• <code>PathTraversalValidationTest</code> (8 PASS)</div>
-                <div>• <code>IgnoreServletPoliciesTest</code> (3 PASS)</div>
                 <div>• <code>EndpointPolicyRegistryTest</code> (3 PASS)</div>
                 <div>• <code>RunModePolicyValidatorTest</code> (4 PASS)</div>
+                <div>• <code>PolicyModeExecutionTest</code> (4 PASS)</div>
               </div>
             </div>
           </div>

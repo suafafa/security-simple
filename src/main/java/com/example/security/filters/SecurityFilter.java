@@ -133,12 +133,6 @@ public class SecurityFilter implements Filter {
                 "lang:optional:pattern(^[a-zA-Z]{2}(?:-[a-zA-Z0-9]{2,})?$):10",
                 "keyword:optional:100"
         };
-
-        @AttributeDefinition(
-                name = "Default Policy: Ignore Servlet Specific Policies",
-                description = "If true, ignores individual servlet security.* properties and enforces the global default policy only"
-        )
-        boolean default_ignoreServletPolicies() default false;
     }
 
     private static final Logger LOG = LoggerFactory.getLogger(SecurityFilter.class);
@@ -416,7 +410,6 @@ public class SecurityFilter implements Filter {
                         }
                     }
                 }
-                newConfig.setIgnoreServletPolicies(config.default_ignoreServletPolicies());
             }
 
             newConfig.init();
