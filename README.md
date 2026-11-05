@@ -232,6 +232,7 @@ sling.filter.pattern="(/aemapi/.*|/sysapi/.*)"
 disabled.validators=[]
 
 default.enabled=B"true"
+default.runModes=[]
 default.referrer="abc.com"
 default.methods=["GET","POST"]
 default.allowUndefinedParams=B"false"

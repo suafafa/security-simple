@@ -783,7 +783,8 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>+ enabled() : boolean / mode() : String = "ENFORCE"</div>
               <div>+ sling_filter_pattern() : String</div>
               <div>+ disabled_validators() : String[]</div>
-              <div>+ default_referrer() / default_methods() / default_params()</div>
+              <div>+ default_runModes() / default_referrer() / default_methods()</div>
+              <div>+ default_allowUndefinedParams() / default_params()</div>
             </div>
           </div>
           <div class="card" style="border-color:#475569;">
@@ -1266,6 +1267,7 @@ disabled.validators=[]
 
 # 3. 기본 보안 정책 (Default Policy)
 default.enabled=B"true"
+default.runModes=[]
 default.referrer="abc.com"
 default.methods=["GET","POST"]
 default.allowUndefinedParams=B"false"

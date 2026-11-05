@@ -109,6 +109,9 @@ public class SecurityFilter implements Filter {
         @AttributeDefinition(name = "Default Policy: Enabled", description = "Enable baseline default security policy for servlets")
         boolean default_enabled() default true;
 
+        @AttributeDefinition(name = "Default Policy: Allowed RunModes", description = "Default allowed AEM run modes (e.g. author, publish, dev, stage, prod). Empty allows all run modes.")
+        String[] default_runModes() default {};
+
         @AttributeDefinition(name = "Default Policy: Allowed Referrer", description = "Default trusted referrer domain (e.g. abc.com)")
         String default_referrer() default "abc.com";
 
@@ -423,6 +426,17 @@ public class SecurityFilter implements Filter {
 
         if (config != null) {
             rule.setEnabled(config.default_enabled());
+            if (config.default_runModes() != null && config.default_runModes().length > 0) {
+                List<String> runModes = new ArrayList<>();
+                for (String rm : config.default_runModes()) {
+                    if (StringUtils.isNotBlank(rm)) {
+                        runModes.add(rm.trim().toLowerCase());
+                    }
+                }
+                if (!runModes.isEmpty()) {
+                    rule.putExtension("runModes", runModes);
+                }
+            }
             rule.setDefaultReferrer(config.default_referrer());
             if (config.default_methods() != null && config.default_methods().length > 0) {
                 rule.setMethods(Arrays.asList(config.default_methods()));
