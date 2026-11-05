@@ -52,6 +52,7 @@ public class PolicyModeExecutionTest {
                 "  \"policies\": [\n" +
                 "    {\n" +
                 "      \"target\": \"/aemapi/mode/enforce\",\n" +
+                "      \"mode\": \"ENFORCE\",\n" +
                 "      \"methods\": [\"POST\"]\n" +
                 "    }\n" +
                 "  ]\n" +
@@ -73,14 +74,15 @@ public class PolicyModeExecutionTest {
     }
 
     @Test
-    @DisplayName("2. 전역 MONITOR 모드일 때 모든 검증기 위반 시 에러 응답 대신 WARN 로그만 남기고 통과(chain.doFilter 호출)")
-    void testGlobalMonitorModeLogsAndPasses() throws Exception {
+    @DisplayName("2. 전역 mode가 ENFORCE이더라도 개별 서블릿 정책이 mode=MONITOR이면 위반 시 WARN 로그만 남기고 통과")
+    void testIndividualServletMonitorModeWorksUnderGlobalEnforce() throws Exception {
         String json = "{\n" +
                 "  \"enabled\": true,\n" +
                 "  \"bundle.id\": \"core-mode\",\n" +
                 "  \"policies\": [\n" +
                 "    {\n" +
                 "      \"target\": \"/aemapi/mode/monitor\",\n" +
+                "      \"mode\": \"MONITOR\",\n" +
                 "      \"methods\": [\"POST\"],\n" +
                 "      \"params\": [\"userId:required:alnum:4..20\"]\n" +
                 "    }\n" +
@@ -89,8 +91,8 @@ public class PolicyModeExecutionTest {
         EndpointPolicyConfig cfg = EndpointPolicyConfig.fromCfgJson("core-mode", json);
         registry.bindPolicyConfig(cfg, Collections.singletonMap("service.pid", cfg.getConfigPid()));
 
-        // 전역 설정을 MONITOR로 변경
-        securityFilter.getServletSecurityConfig().setMode(PolicyMode.MONITOR);
+        // 전역 모드는 ENFORCE 상태 확인
+        assertEquals(PolicyMode.ENFORCE, securityFilter.getServletSecurityConfig().getMode());
 
         // Referer 누락(403 위반) + DELETE 메서드(405 위반) + 필수 파라미터 userId 누락(400 위반) 동시 발생
         when(request.getRequestURI()).thenReturn("/aemapi/mode/monitor");
@@ -99,20 +101,21 @@ public class PolicyModeExecutionTest {
 
         securityFilter.doFilter(request, response, filterChain);
 
-        // 전역 MONITOR 모드이므로 에러 상태 코드 설정 없이 모든 검증기를 거쳐 chain.doFilter가 정상 실행되어야 함
+        // 개별 서블릿이 MONITOR 모드이므로 에러 상태 코드 설정 없이 모든 검증기를 거쳐 chain.doFilter가 정상 실행되어야 함
         verify(response, never()).setStatus(anyInt());
         verify(filterChain, times(1)).doFilter(request, response);
     }
 
     @Test
-    @DisplayName("3. 운영 중 전역 모드를 MONITOR에서 ENFORCE로 전환 시 즉시 차단 동작으로 변경되는지 검증")
-    void testDynamicSwitchBetweenGlobalMonitorAndEnforce() throws Exception {
+    @DisplayName("3. 전체 설정(Global Mode = MONITOR)이 개별 설정(mode = ENFORCE)보다 우선하여 통과하는지 검증")
+    void testGlobalMonitorModeOverridesIndividualEnforcePolicy() throws Exception {
         String json = "{\n" +
                 "  \"enabled\": true,\n" +
                 "  \"bundle.id\": \"core-mode\",\n" +
                 "  \"policies\": [\n" +
                 "    {\n" +
-                "      \"target\": \"/aemapi/mode/switch\",\n" +
+                "      \"target\": \"/aemapi/mode/strict\",\n" +
+                "      \"mode\": \"ENFORCE\",\n" +
                 "      \"methods\": [\"POST\"]\n" +
                 "    }\n" +
                 "  ]\n" +
@@ -120,25 +123,17 @@ public class PolicyModeExecutionTest {
         EndpointPolicyConfig cfg = EndpointPolicyConfig.fromCfgJson("core-mode", json);
         registry.bindPolicyConfig(cfg, Collections.singletonMap("service.pid", cfg.getConfigPid()));
 
-        when(request.getRequestURI()).thenReturn("/aemapi/mode/switch");
+        // 전체 설정을 MONITOR로 변경
+        securityFilter.getServletSecurityConfig().setMode(PolicyMode.MONITOR);
+
+        when(request.getRequestURI()).thenReturn("/aemapi/mode/strict");
         when(request.getHeader("Referer")).thenReturn("https://evil.com");
         when(request.getMethod()).thenReturn("DELETE");
 
-        // 1. 전역 MONITOR 모드: 위반 요청 통과
-        securityFilter.getServletSecurityConfig().setMode("MONITOR");
         securityFilter.doFilter(request, response, filterChain);
+
+        // 개별 서블릿이 ENFORCE이더라도 전체 설정(MONITOR)이 우선하여 차단되지 않고 통과해야 함
         verify(response, never()).setStatus(anyInt());
         verify(filterChain, times(1)).doFilter(request, response);
-
-        // 2. 전역 ENFORCE 모드로 전환: 동일 위반 요청 즉시 403 차단
-        reset(filterChain, response);
-        securityFilter.getServletSecurityConfig().setMode("ENFORCE");
-        StringWriter body = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(body));
-
-        securityFilter.doFilter(request, response, filterChain);
-        verify(response).setStatus(403);
-        verify(filterChain, never()).doFilter(request, response);
-        assertTrue(body.toString().contains("SEC-40303"));
     }
 }

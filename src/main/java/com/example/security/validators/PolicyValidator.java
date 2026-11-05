@@ -45,14 +45,24 @@ public interface PolicyValidator {
     }
 
     /**
-     * 전역 설정({@link ServletSecurityConfig#getMode()})을 기반으로
+     * 전역 설정({@link ServletSecurityConfig#getMode()})과 개별 서블릿 정책({@link ServletPolicyRule#getMode()})을 기반으로
      * 이 검증기의 실행 모드({@link PolicyMode#ENFORCE} 또는 {@link PolicyMode#MONITOR})를 판별합니다.
+     * <ul>
+     *   <li>전역 모드가 {@link PolicyMode#MONITOR}이면 무조건 {@code MONITOR}로 동작합니다.</li>
+     *   <li>전역 모드가 {@link PolicyMode#ENFORCE}이더라도 개별 서블릿 정책에 {@code mode}가 지정되어 있으면(예: {@code MONITOR}) 개별 서블릿의 모드를 따릅니다.</li>
+     * </ul>
      *
      * @param policy     매칭된 서블릿 보안 정책 규칙
      * @param rootConfig 루트 서블릿 보안 설정
-     * @return 적용할 전역 {@link PolicyMode} ({@code ENFORCE} 또는 {@code MONITOR})
+     * @return 적용할 {@link PolicyMode} ({@code ENFORCE} 또는 {@code MONITOR})
      */
     default PolicyMode resolveMode(ServletPolicyRule policy, ServletSecurityConfig rootConfig) {
+        if (rootConfig != null && rootConfig.getMode() == PolicyMode.MONITOR) {
+            return PolicyMode.MONITOR;
+        }
+        if (policy != null && policy.getMode() != null) {
+            return policy.getMode();
+        }
         if (rootConfig != null && rootConfig.getMode() != null) {
             return rootConfig.getMode();
         }

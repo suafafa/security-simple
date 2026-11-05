@@ -28,6 +28,13 @@ public class ServletPolicyRule {
     @SerializedName("enabled")
     private Boolean enabled = true;
 
+    /**
+     * 개별 서블릿 정책의 보안 실행 모드 ({@code "ENFORCE"} 또는 {@code "MONITOR"}).
+     * 전역 모드가 {@code ENFORCE}이더라도 개별 서블릿이 {@code "MONITOR"}로 설정되면 해당 서블릿은 로그 전용 모드로 동작합니다.
+     */
+    @SerializedName(value = "mode", alternate = {"policyMode", "securityMode"})
+    private String mode;
+
     @SerializedName("methods")
     private List<String> methods;
 
@@ -70,6 +77,7 @@ public class ServletPolicyRule {
             "params", "parameters", "paramrules", "security.params",
             "requiredparams", "required_params", "security.requiredparams", "required",
             "validators", "validatorsettings", "disabledvalidators", "skipvalidators", "enabledvalidators",
+            "mode", "policymode", "securitymode",
             "extensions", "options", "customoptions"
     )));
 
@@ -77,6 +85,7 @@ public class ServletPolicyRule {
     private transient Set<String> upperMethods;
     private transient Set<String> lowerAllowedReferrers;
     private transient Map<String, Boolean> validatorStatusMap;
+    private transient PolicyMode resolvedMode;
     private transient Map<String, ParamRule> lowerParams;
     private transient Pattern compiledTargetPattern;
 
@@ -129,6 +138,8 @@ public class ServletPolicyRule {
         } else {
             this.lowerParams = Collections.emptyMap();
         }
+
+        this.resolvedMode = PolicyMode.fromString(this.mode);
 
         Map<String, Boolean> vMap = new HashMap<>();
         if (validators != null && validators.isJsonObject()) {
@@ -467,6 +478,38 @@ public class ServletPolicyRule {
     }
 
     /**
+     * 이 서블릿 정책에 설정된 {@link PolicyMode}({@code ENFORCE} 또는 {@code MONITOR})를 반환합니다.
+     *
+     * @return 설정된 {@link PolicyMode} (미설정 시 null)
+     */
+    public PolicyMode getMode() {
+        if (resolvedMode != null) {
+            return resolvedMode;
+        }
+        return PolicyMode.fromString(mode);
+    }
+
+    /**
+     * 이 서블릿 정책의 {@link PolicyMode}를 설정합니다.
+     *
+     * @param policyMode 설정할 {@link PolicyMode}
+     */
+    public void setMode(final PolicyMode policyMode) {
+        this.resolvedMode = policyMode;
+        this.mode = policyMode != null ? policyMode.name() : null;
+    }
+
+    /**
+     * 문자열("ENFORCE" 또는 "MONITOR")로 이 서블릿 정책의 모드를 설정합니다.
+     *
+     * @param mode 설정할 모드 문자열
+     */
+    public void setMode(final String mode) {
+        this.mode = mode;
+        this.resolvedMode = PolicyMode.fromString(mode);
+    }
+
+    /**
      * 커스텀 {@link com.example.security.validators.PolicyValidator}에서 사용할 확장 설정 맵을 반환합니다.
      *
      * @return 확장 설정 맵 (없으면 빈 Map)
@@ -589,6 +632,11 @@ public class ServletPolicyRule {
             return;
         }
 
+        if (StringUtils.isBlank(this.mode) && StringUtils.isNotBlank(parent.mode)) {
+            this.mode = parent.mode;
+            this.resolvedMode = parent.resolvedMode;
+        }
+
         if ((this.methods == null || this.methods.isEmpty()) && parent.methods != null && !parent.methods.isEmpty()) {
             this.methods = new ArrayList<>(parent.methods);
         }
@@ -672,6 +720,8 @@ public class ServletPolicyRule {
         if (other == null) return;
         this.target = other.target;
         this.enabled = other.enabled;
+        this.mode = other.mode;
+        this.resolvedMode = other.resolvedMode;
         this.methods = other.methods != null ? new ArrayList<>(other.methods) : null;
         this.defaultReferrer = other.defaultReferrer;
         this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
@@ -751,7 +801,11 @@ public class ServletPolicyRule {
             rule.setParams(consolidatedParams);
         }
 
-        // 6. 개별 검증기 On/Off 설정
+        // 6. 실행 모드(mode: ENFORCE | MONITOR) 및 개별 검증기 On/Off 설정
+        List<String> modes = extractStringList(props, "mode", "policyMode", "securityMode");
+        if (!modes.isEmpty()) {
+            rule.setMode(modes.get(0));
+        }
         if (props.get("validators") instanceof Map<?, ?>) {
             rule.validators = new com.google.gson.Gson().toJsonTree(props.get("validators"));
         } else if (props.get("validatorSettings") instanceof Map<?, ?>) {
@@ -1379,6 +1433,9 @@ public class ServletPolicyRule {
     public String toPolicySummaryString() {
         StringBuilder sb = new StringBuilder();
         sb.append("target=").append(StringUtils.defaultIfBlank(target, "UNKNOWN"));
+        if (getMode() != null) {
+            sb.append(", mode=").append(getMode());
+        }
         sb.append(", methods=").append(getMethods().isEmpty() ? "ALL" : getMethods());
         if (StringUtils.isNotBlank(defaultReferrer) || !getAllowedReferrers().isEmpty()) {
             List<String> refs = new ArrayList<>();
