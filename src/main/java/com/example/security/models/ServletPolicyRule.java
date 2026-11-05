@@ -38,9 +38,6 @@ public class ServletPolicyRule {
     @SerializedName("methods")
     private List<String> methods;
 
-    @SerializedName(value = "defaultReferrer", alternate = {"defaultReferer", "default_referrer", "default_referer"})
-    private String defaultReferrer;
-
     @SerializedName("allowedReferrers")
     private List<String> allowedReferrers;
 
@@ -49,15 +46,6 @@ public class ServletPolicyRule {
 
     @SerializedName("params")
     private Map<String, ParamRule> params;
-
-    @SerializedName(value = "validators", alternate = {"validatorSettings"})
-    private JsonElement validators;
-
-    @SerializedName(value = "disabledValidators", alternate = {"skipValidators"})
-    private List<String> disabledValidators;
-
-    @SerializedName(value = "enabledValidators")
-    private List<String> enabledValidators;
 
     /**
      * 커스텀 {@link com.example.security.validators.PolicyValidator} 플러그인이 {@code ServletPolicyRule} 클래스를
@@ -71,12 +59,10 @@ public class ServletPolicyRule {
     private static final Set<String> BUILT_IN_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "target", "targets", "path", "paths", "sling.servlet.paths", "resourcetype", "resourcetypes",
             "enabled", "methods", "allowedmethods", "security.methods",
-            "defaultreferrer", "defaultreferer", "default_referrer", "default_referer",
             "allowedreferrers", "referrers", "security.referrers",
             "allowundefinedparams", "allow_undefined_params", "security.allowundefinedparams",
             "params", "parameters", "paramrules", "security.params",
             "requiredparams", "required_params", "security.requiredparams", "required",
-            "validators", "validatorsettings", "disabledvalidators", "skipvalidators", "enabledvalidators",
             "mode", "policymode", "securitymode",
             "extensions", "options", "customoptions"
     )));
@@ -84,7 +70,6 @@ public class ServletPolicyRule {
     // 런타임 캐시 필드
     private transient Set<String> upperMethods;
     private transient Set<String> lowerAllowedReferrers;
-    private transient Map<String, Boolean> validatorStatusMap;
     private transient PolicyMode resolvedMode;
     private transient Map<String, ParamRule> lowerParams;
     private transient Pattern compiledTargetPattern;
@@ -140,41 +125,6 @@ public class ServletPolicyRule {
         }
 
         this.resolvedMode = PolicyMode.fromString(this.mode);
-
-        Map<String, Boolean> vMap = new HashMap<>();
-        if (validators != null && validators.isJsonObject()) {
-            JsonObject obj = validators.getAsJsonObject();
-            for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
-                try {
-                    String vKey = entry.getKey().trim().toUpperCase();
-                    JsonElement valEl = entry.getValue();
-                    if (valEl != null && valEl.isJsonPrimitive()) {
-                        String rawStr = valEl.getAsString().trim();
-                        if ("false".equalsIgnoreCase(rawStr) || "off".equalsIgnoreCase(rawStr) || "disabled".equalsIgnoreCase(rawStr)) {
-                            vMap.put(vKey, false);
-                        } else if ("true".equalsIgnoreCase(rawStr) || "on".equalsIgnoreCase(rawStr) || "enabled".equalsIgnoreCase(rawStr)) {
-                            vMap.put(vKey, true);
-                        }
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        if (disabledValidators != null) {
-            for (String v : disabledValidators) {
-                if (StringUtils.isNotBlank(v)) {
-                    vMap.put(v.trim().toUpperCase(), false);
-                }
-            }
-        }
-        if (enabledValidators != null) {
-            for (String v : enabledValidators) {
-                if (StringUtils.isNotBlank(v)) {
-                    vMap.put(v.trim().toUpperCase(), true);
-                }
-            }
-        }
-        this.validatorStatusMap = Collections.unmodifiableMap(vMap);
 
         List<String> errors = new ArrayList<>();
         validate(errors);
@@ -426,58 +376,6 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 기본 허용 Referer 도메인을 반환합니다.
-     *
-     * @return 기본 허용 Referer 도메인 문자열
-     */
-    public String getDefaultReferrer() {
-        return defaultReferrer;
-    }
-
-    /**
-     * 기본 허용 Referer 도메인을 설정합니다.
-     *
-     * @param defaultReferrer 기본 허용 Referer 도메인 문자열
-     */
-    public void setDefaultReferrer(String defaultReferrer) {
-        this.defaultReferrer = defaultReferrer;
-    }
-
-    /**
-     * 기본 허용 Referer 도메인을 반환합니다 ({@link #getDefaultReferrer()}의 별칭).
-     *
-     * @return 기본 허용 Referer 도메인 문자열
-     */
-    public String getDefaultReferer() {
-        return defaultReferrer;
-    }
-
-    /**
-     * 기본 허용 Referer 도메인을 설정합니다 ({@link #setDefaultReferrer(String)}의 별칭).
-     *
-     * @param defaultReferer 기본 허용 Referer 도메인 문자열
-     */
-    public void setDefaultReferer(String defaultReferer) {
-        this.defaultReferrer = defaultReferer;
-    }
-
-    /**
-     * 이 정책 규칙에서 특정 검증기(예: "REFERER", "METHOD", "PARAM")가 활성화되어 있는지 확인합니다.
-     *
-     * @param validatorName 확인할 검증기 이름
-     * @return 활성화되어 있으면 true, 비활성화되어 있으면 false
-     */
-    public boolean isValidatorEnabled(String validatorName) {
-        if (validatorStatusMap != null && validatorName != null) {
-            Boolean status = validatorStatusMap.get(validatorName.trim().toUpperCase());
-            if (status != null) {
-                return status;
-            }
-        }
-        return true;
-    }
-
-    /**
      * 이 서블릿 정책에 설정된 {@link PolicyMode}({@code ENFORCE} 또는 {@code MONITOR})를 반환합니다.
      *
      * @return 설정된 {@link PolicyMode} (미설정 시 null)
@@ -641,10 +539,6 @@ public class ServletPolicyRule {
             this.methods = new ArrayList<>(parent.methods);
         }
 
-        if (StringUtils.isBlank(this.defaultReferrer) && StringUtils.isNotBlank(parent.defaultReferrer)) {
-            this.defaultReferrer = parent.defaultReferrer;
-        }
-
         if (parent.allowedReferrers != null && !parent.allowedReferrers.isEmpty()) {
             if (this.allowedReferrers == null) {
                 this.allowedReferrers = new ArrayList<>(parent.allowedReferrers);
@@ -723,12 +617,8 @@ public class ServletPolicyRule {
         this.mode = other.mode;
         this.resolvedMode = other.resolvedMode;
         this.methods = other.methods != null ? new ArrayList<>(other.methods) : null;
-        this.defaultReferrer = other.defaultReferrer;
         this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
         this.allowUndefinedParams = other.allowUndefinedParams;
-        this.validators = other.validators;
-        this.disabledValidators = other.disabledValidators != null ? new ArrayList<>(other.disabledValidators) : null;
-        this.enabledValidators = other.enabledValidators != null ? new ArrayList<>(other.enabledValidators) : null;
         this.extensions = other.extensions != null ? new LinkedHashMap<>(other.extensions) : null;
         if (other.params != null) {
             Map<String, ParamRule> copiedParams = new LinkedHashMap<>(other.params.size());
@@ -752,14 +642,10 @@ public class ServletPolicyRule {
     private static ServletPolicyRule parseRuleForTarget(Map<String, Object> props) {
         ServletPolicyRule rule = new ServletPolicyRule();
 
-        // 0. 정책 활성화 여부 및 기본 Referer (Enabled & DefaultReferrer)
+        // 0. 정책 활성화 여부 (Enabled)
         Boolean enabledVal = extractBoolean(props, "enabled");
         if (enabledVal != null) {
             rule.setEnabled(enabledVal);
-        }
-        List<String> defaultRefs = extractStringList(props, "defaultReferrer", "defaultReferer");
-        if (!defaultRefs.isEmpty()) {
-            rule.setDefaultReferrer(defaultRefs.get(0));
         }
 
         // 1. 허용 HTTP 메소드 (Methods)
@@ -801,23 +687,10 @@ public class ServletPolicyRule {
             rule.setParams(consolidatedParams);
         }
 
-        // 6. 실행 모드(mode: ENFORCE | MONITOR) 및 개별 검증기 On/Off 설정
+        // 6. 실행 모드(mode: ENFORCE | MONITOR) 설정
         List<String> modes = extractStringList(props, "mode", "policyMode", "securityMode");
         if (!modes.isEmpty()) {
             rule.setMode(modes.get(0));
-        }
-        if (props.get("validators") instanceof Map<?, ?>) {
-            rule.validators = new com.google.gson.Gson().toJsonTree(props.get("validators"));
-        } else if (props.get("validatorSettings") instanceof Map<?, ?>) {
-            rule.validators = new com.google.gson.Gson().toJsonTree(props.get("validatorSettings"));
-        }
-        List<String> disabledVals = extractStringList(props, "disabledValidators", "skipValidators");
-        if (!disabledVals.isEmpty()) {
-            rule.disabledValidators = disabledVals;
-        }
-        List<String> enabledVals = extractStringList(props, "enabledValidators");
-        if (!enabledVals.isEmpty()) {
-            rule.enabledValidators = enabledVals;
         }
 
         // 7. 커스텀 Validator를 위한 확장 속성(extensions) 자동 수집
@@ -1437,11 +1310,8 @@ public class ServletPolicyRule {
             sb.append(", mode=").append(getMode());
         }
         sb.append(", methods=").append(getMethods().isEmpty() ? "ALL" : getMethods());
-        if (StringUtils.isNotBlank(defaultReferrer) || !getAllowedReferrers().isEmpty()) {
-            List<String> refs = new ArrayList<>();
-            if (StringUtils.isNotBlank(defaultReferrer)) refs.add(defaultReferrer);
-            refs.addAll(getAllowedReferrers());
-            sb.append(", allowedReferrers=").append(refs);
+        if (!getAllowedReferrers().isEmpty()) {
+            sb.append(", allowedReferrers=").append(getAllowedReferrers());
         }
         sb.append(", allowUndefinedParams=").append(isAllowUndefinedParams());
 

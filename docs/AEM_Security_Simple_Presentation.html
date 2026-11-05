@@ -492,8 +492,8 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div style="background:#fff;border:1px solid #2563eb;border-radius:8px;padding:8px 10px;font-size:11.5px;">
                 <div style="background:#2563eb;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">OSGi OCD 전역 설정 (SecurityFilter.config)</div>
                 <div>• <code>enabled</code> / <code>sling.filter.pattern</code></div>
-                <div>• <code>mode</code> (<code>ENFORCE</code> / <code>MONITOR</code>) &amp; <code>disabled.validators</code></div>
-                <div>• <code>default.*</code> (<code>abc.com</code>, <code>GET/POST</code>, 공통 params)</div>
+                <div>• <code>mode</code> (<code>ENFORCE</code> / <code>MONITOR</code>)</div>
+                <div>• <code>default.*</code> (<code>referrers=["abc.com"]</code>, <code>GET/POST</code>, 공통 params)</div>
               </div>
               <div style="background:#fff;border:1px solid #0d9488;border-radius:8px;padding:8px 10px;font-size:11.5px;">
                 <div style="background:#0d9488;color:#fff;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:5px;">번들별 .cfg.json 감지 (EndpointPolicyRegistry)</div>
@@ -600,7 +600,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;"><strong>① OSGi ➔ Filter :</strong> <code>activate(Config config)</code> 호출</div>
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:36px;"><strong>② Filter ➔ Filter (Self-Loop) :</strong> <code>1. filterPattern 정규식 사전 컴파일</code> (<code>Pattern.compile()</code> 캐싱)</div>
             <div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>③ Filter ➔ Config :</strong> <code>2. defaultPolicy (기본 정책) 생성 및 등록</code> (<code>buildDefaultPolicy</code>)</div>
-            <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 모드(mode) 및 비활성 검증기(disabled.validators) 설정 반영</code></div>
+            <div style="background:#eef2ff;border-left:4px solid #4f46e5;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>④ Filter ➔ Config :</strong> <code>3. 전역 모드(mode: ENFORCE / MONITOR) 설정 반영</code></div>
             <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:6px 10px;border-radius:4px;margin-left:72px;"><strong>⑤ Filter ➔ Config :</strong> <code>4. EndpointPolicyRegistry(.cfg.json) 정책과 defaultPolicy 동기화</code> (<code>syncRegistryPolicies</code>)</div>
           </div>
           <div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:6px;padding:6px;text-align:center;font-weight:700;font-size:11.5px;color:#0f172a;">[무중단 복원력] 설정 파싱 예외 발생 시 <code>handleConfigFailure()</code>가 직전 정상 설정(Last Known Good) 유지</div>
@@ -610,7 +610,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
           <div class="card-body" style="font-size:12px;gap:8px;">
             <div><strong>1. 필터 대상 패턴 사전 컴파일:</strong> <code>sling.filter.pattern</code>을 <code>Pattern.compile()</code>로 메모리에 캐싱하여 런타임 컴파일 부하 제거</div>
             <div><strong>2. 전역 기본 정책(defaultPolicy) 생성:</strong> 기본 도메인 <code>abc.com</code>, 메서드 <code>GET, POST</code>, 공통 파라미터(<code>page, size, sort, order, lang, keyword</code>) 설정</div>
-            <div><strong>3. 전역 모드 및 검증기 비활성화 설정:</strong> <code>mode</code>(<code>ENFORCE/MONITOR</code>) 및 <code>disabled.validators</code> 반영</div>
+            <div><strong>3. 전역 보안 실행 모드 설정:</strong> <code>mode</code>(<code>ENFORCE/MONITOR</code>) 반영</div>
             <div><strong>4. 번들별 .cfg.json 레지스트리 동기화:</strong> <code>EndpointPolicyRegistry</code>에 로드된 정책들에 <code>defaultPolicy</code>를 즉시 상속시켜 갱신</div>
           </div>
         </div>
@@ -782,8 +782,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.2px;padding:6px 10px;gap:2px;">
               <div>+ enabled() : boolean / mode() : String = "ENFORCE"</div>
               <div>+ sling_filter_pattern() : String</div>
-              <div>+ disabled_validators() : String[]</div>
-              <div>+ default_runModes() / default_referrer() / default_methods()</div>
+              <div>+ default_runModes() / default_referrers() / default_methods()</div>
               <div>+ default_allowUndefinedParams() / default_params()</div>
             </div>
           </div>
@@ -802,17 +801,15 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:8px 10px;gap:2px;">
               <div>- enabled : Boolean = true</div>
               <div>- mode : PolicyMode = PolicyMode.ENFORCE</div>
-              <div>- defaultReferrer : String = "abc.com"</div>
               <div>- defaultPolicy : ServletPolicyRule</div>
               <div>- exactUriMap : Map&lt;String, ServletPolicyRule&gt;</div>
               <div>- resourceTypeMap : Map&lt;String, ServletPolicyRule&gt;</div>
               <div>- patternPolicies : List&lt;ServletPolicyRule&gt;</div>
-              <div>- validatorStatusMap : Map&lt;String, Boolean&gt;</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() : void / findMatchingPolicy(req) : Rule</div>
               <div>+ registerPolicy(rule) / unregisterPolicy(target)</div>
               <div>+ clearPolicies() : void</div>
-              <div>+ isValidatorEnabled(name) / getMode() : PolicyMode</div>
+              <div>+ getMode() : PolicyMode / setMode(mode)</div>
             </div>
           </div>
           <div class="card" style="border-color:#2563eb;flex:1;">
@@ -821,7 +818,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>- target : String / enabled : Boolean</div>
               <div>- mode : String (resolvedMode : PolicyMode)</div>
               <div>- methods : List (upperMethods : Set)</div>
-              <div>- defaultReferrer / allowedReferrers / allowUndefinedParams</div>
+              <div>- allowedReferrers : List / allowUndefinedParams : Boolean</div>
               <div>- params : Map&lt;String, ParamRule&gt; / extensions : Map</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() / validate(errors) / matches(req) : boolean</div>
@@ -836,7 +833,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-header indigo" style="font-size:12px;padding:6px 10px;">«Interface &amp; Base» PolicyValidator / AbstractPolicyValidator</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.4px;padding:6px 10px;gap:2px;">
               <div>+ getName() : String / getOrder() : int = 100</div>
-              <div>+ isEnabled(policy, rootConfig) : boolean</div>
               <div>+ resolveMode(policy, rootConfig) : PolicyMode</div>
               <div>+ validate(req, policy, cfg) / # doValidate(...)</div>
             </div>
@@ -1258,18 +1254,15 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
         <div class="grid-2">
           <div class="code-box">
             <div class="code-header">com.example.security.filters.SecurityFilter.config</div>
-            <pre># 1. 필터 마스터 스위치 및 대상 경로 정규식
+            <pre># 1. 필터 마스터 스위치, 전역 모드 및 대상 경로 정규식
 enabled=B"true"
+mode="ENFORCE"
 sling.filter.pattern="(/aemapi/.*|/sysapi/.*)"
 
-# 2. 전역 모드 및 Validator 비활성화 스위치
-mode="ENFORCE"
-disabled.validators=[]
-
-# 3. 기본 보안 정책 (Default Policy)
+# 2. 기본 보안 정책 (Default Policy)
 default.enabled=B"true"
 default.runModes=[]
-default.referrer="abc.com"
+default.referrers=["abc.com"]
 default.methods=["GET","POST"]
 default.allowUndefinedParams=B"false"
 default.params=[

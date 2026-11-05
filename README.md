@@ -79,9 +79,8 @@ sequenceDiagram
 ### 2-1. 기동 및 설정 로드 관점 (`activate` & `EndpointPolicyRegistry`)
 OSGi 프레임워크가 컴포넌트를 활성화(`@Activate`)하거나 설정 변경(`@Modified`) 시 호출합니다:
 1. **필터 대상 패턴 사전 컴파일**: `config.sling_filter_pattern()`(기본값: `(/aemapi/.*|/sysapi/.*)`)을 `Pattern.compile()`로 메모리에 캐싱하여 런타임 정규식 컴파일 부하를 제거합니다.
-2. **전역 기본 정책(`defaultPolicy`) 생성**: `config`의 `default.*` 속성을 바탕으로 베이스라인 `ServletPolicyRule`을 생성합니다 (기본 도메인 `abc.com`, 메서드 `GET, POST`, 공통 파라미터 `page, size, sort, keyword` 등).
-3. **검증기 비활성화 토글 반영**: `config.disabled_validators()` 설정을 읽어 필요 시 전역 수준에서 특정 검증기를 비활성화합니다.
-4. **번들별 `.cfg.json` 레지스트리 동기화 (`syncRegistryPolicies`)**: `EndpointPolicyRegistry`에 로드된 번들별 `EndpointPolicyConfig~<번들명>.cfg.json` 정책들에 `defaultPolicy`를 상속시켜 `ServletSecurityConfig`에 동기화합니다.
+2. **전역 기본 정책(`defaultPolicy`) 생성**: `config`의 `default.*` 속성을 바탕으로 베이스라인 `ServletPolicyRule`을 생성합니다 (기본 도메인 `["abc.com"]`, 메서드 `GET, POST`, 공통 파라미터 `page, size, sort, keyword` 등).
+3. **번들별 `.cfg.json` 레지스트리 동기화 (`syncRegistryPolicies`)**: `EndpointPolicyRegistry`에 로드된 번들별 `EndpointPolicyConfig~<번들명>.cfg.json` 정책들에 `defaultPolicy`를 상속시켜 `ServletSecurityConfig`에 동기화합니다.
 
 ### 2-2. 요청 가로채기 및 검증 관점 (`doFilter`)
 클라이언트로부터 실제 HTTP 요청이 들어왔을 때 필터 체인에서 매번 실행됩니다:
@@ -229,11 +228,9 @@ enabled=B"true"
 mode="ENFORCE"
 sling.filter.pattern="(/aemapi/.*|/sysapi/.*)"
 
-disabled.validators=[]
-
 default.enabled=B"true"
 default.runModes=[]
-default.referrer="abc.com"
+default.referrers=["abc.com"]
 default.methods=["GET","POST"]
 default.allowUndefinedParams=B"false"
 default.params=[ \

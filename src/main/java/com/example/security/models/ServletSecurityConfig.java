@@ -36,14 +36,8 @@ public class ServletSecurityConfig {
     @SerializedName(value = "mode", alternate = {"policyMode", "securityMode"})
     private PolicyMode mode = PolicyMode.ENFORCE;
 
-    @SerializedName(value = "defaultReferrer", alternate = {"defaultReferer", "default_referrer", "default_referer"})
-    private String defaultReferrer = "abc.com";
-
     @SerializedName(value = "defaultPolicy", alternate = {"default", "globalPolicy"})
     private ServletPolicyRule defaultPolicy;
-
-    // 런타임 검증기 활성화 상태 맵: 검증기 이름(대문자) -> Boolean
-    private transient Map<String, Boolean> validatorStatusMap = Collections.emptyMap();
 
     // 단일 O(1) 정책 인덱스 저장소 (.cfg.json 정책 등록용)
     private transient Map<String, ServletPolicyRule> exactUriMap = new ConcurrentHashMap<>();
@@ -64,7 +58,6 @@ public class ServletSecurityConfig {
      */
     public ServletSecurityConfig(Boolean enabled) {
         this.enabled = enabled;
-        this.defaultReferrer = "abc.com";
         init();
     }
 
@@ -72,9 +65,6 @@ public class ServletSecurityConfig {
      * 루트 설정 및 기본 정책(defaultPolicy)의 유효성을 검증하고 인덱스를 초기화합니다.
      */
     public final void init() {
-        Map<String, Boolean> map = validatorStatusMap != null ? new HashMap<>(validatorStatusMap) : new HashMap<>();
-        this.validatorStatusMap = Collections.unmodifiableMap(map);
-
         if (this.mode == null) {
             this.mode = PolicyMode.ENFORCE;
         }
@@ -86,10 +76,6 @@ public class ServletSecurityConfig {
                 defaultPolicy.setTarget("DEFAULT");
             }
             defaultPolicy.validate(allValidationErrors);
-
-            if (StringUtils.isNotBlank(defaultPolicy.getDefaultReferrer())) {
-                this.defaultReferrer = defaultPolicy.getDefaultReferrer().trim();
-            }
         }
 
         if (!allValidationErrors.isEmpty()) {
@@ -122,8 +108,8 @@ public class ServletSecurityConfig {
         }
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("ServletSecurityConfig 초기화 완료 - enabled={}, defaultReferrer={}, 등록된 정책 수={}",
-                    enabled, defaultReferrer, policiesByTarget.size());
+            LOG.debug("ServletSecurityConfig 초기화 완료 - enabled={}, 등록된 정책 수={}",
+                    enabled, policiesByTarget.size());
         }
     }
 
@@ -348,24 +334,6 @@ public class ServletSecurityConfig {
     }
 
     /**
-     * 전역 기본 신뢰 Referer 도메인(예: "abc.com")을 반환합니다.
-     *
-     * @return 기본 신뢰 Referer 도메인
-     */
-    public String getDefaultReferrer() {
-        return StringUtils.isNotBlank(defaultReferrer) ? defaultReferrer.trim() : "abc.com";
-    }
-
-    /**
-     * 전역 기본 신뢰 Referer 도메인을 설정합니다.
-     *
-     * @param defaultReferrer 기본 신뢰 Referer 도메인
-     */
-    public void setDefaultReferrer(String defaultReferrer) {
-        this.defaultReferrer = defaultReferrer;
-    }
-
-    /**
      * 전사 공통 기본 보안 정책(defaultPolicy)을 반환합니다.
      *
      * @return 기본 보안 정책 규칙
@@ -381,46 +349,6 @@ public class ServletSecurityConfig {
      */
     public void setDefaultPolicy(ServletPolicyRule defaultPolicy) {
         this.defaultPolicy = defaultPolicy;
-    }
-
-    /**
-     * 특정 검증기(REFERER, METHOD, PARAM)가 전역적으로 활성화되어 있는지 확인합니다.
-     *
-     * @param validatorName 검증기 식별자 이름
-     * @return 활성화 상태이면 true (기본값 true)
-     */
-    public boolean isValidatorEnabled(String validatorName) {
-        if (validatorStatusMap != null && validatorName != null) {
-            Boolean status = validatorStatusMap.get(validatorName.trim().toUpperCase());
-            if (status != null) {
-                return status;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * 특정 검증기(REFERER, METHOD, PARAM)의 전역 활성화 상태를 설정합니다.
-     *
-     * @param validatorName 검증기 식별자 이름
-     * @param enabled       활성화 여부
-     */
-    public void setValidatorEnabled(String validatorName, boolean enabled) {
-        if (StringUtils.isBlank(validatorName)) {
-            return;
-        }
-        Map<String, Boolean> map = validatorStatusMap != null ? new HashMap<>(validatorStatusMap) : new HashMap<>();
-        map.put(validatorName.trim().toUpperCase(), enabled);
-        this.validatorStatusMap = Collections.unmodifiableMap(map);
-    }
-
-    /**
-     * 전역 검증기 활성화 상태 맵을 반환합니다.
-     *
-     * @return 검증기 이름별 활성화 여부 맵
-     */
-    public Map<String, Boolean> getValidatorStatusMap() {
-        return validatorStatusMap != null ? validatorStatusMap : Collections.emptyMap();
     }
 
     /**

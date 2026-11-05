@@ -100,20 +100,14 @@ public class SecurityFilter implements Filter {
         )
         String sling_filter_pattern() default "(/aemapi/.*|/sysapi/.*)";
 
-        @AttributeDefinition(
-                name = "Disabled Validators (Names)",
-                description = "List of validator names to disable globally (e.g. RUNMODE, CSRF, REFERER). Allows disabling newly added custom validators without changing Config interface."
-        )
-        String[] disabled_validators() default {};
-
         @AttributeDefinition(name = "Default Policy: Enabled", description = "Enable baseline default security policy for servlets")
         boolean default_enabled() default true;
 
         @AttributeDefinition(name = "Default Policy: Allowed RunModes", description = "Default allowed AEM run modes (e.g. author, publish, dev, stage, prod). Empty allows all run modes.")
         String[] default_runModes() default {};
 
-        @AttributeDefinition(name = "Default Policy: Allowed Referrer", description = "Default trusted referrer domain (e.g. abc.com)")
-        String default_referrer() default "abc.com";
+        @AttributeDefinition(name = "Default Policy: Allowed Referrers", description = "Default trusted referrer domains (e.g. abc.com, partner.abc.com)")
+        String[] default_referrers() default {"abc.com"};
 
         @AttributeDefinition(name = "Default Policy: Allowed HTTP Methods", description = "Default allowed HTTP methods (e.g. GET, POST)")
         String[] default_methods() default {"GET", "POST"};
@@ -387,19 +381,9 @@ public class SecurityFilter implements Filter {
 
             ServletSecurityConfig newConfig = new ServletSecurityConfig(isEnabled);
             newConfig.setDefaultPolicy(defaultRule);
-            if (StringUtils.isNotBlank(defaultRule.getDefaultReferrer())) {
-                newConfig.setDefaultReferrer(defaultRule.getDefaultReferrer());
-            }
 
             if (config != null) {
                 newConfig.setMode(config.mode());
-                if (config.disabled_validators() != null) {
-                    for (String disabledName : config.disabled_validators()) {
-                        if (StringUtils.isNotBlank(disabledName)) {
-                            newConfig.setValidatorEnabled(disabledName.trim(), false);
-                        }
-                    }
-                }
             }
 
             newConfig.init();
@@ -437,7 +421,9 @@ public class SecurityFilter implements Filter {
                     rule.putExtension("runModes", runModes);
                 }
             }
-            rule.setDefaultReferrer(config.default_referrer());
+            if (config.default_referrers() != null && config.default_referrers().length > 0) {
+                rule.setAllowedReferrers(Arrays.asList(config.default_referrers()));
+            }
             if (config.default_methods() != null && config.default_methods().length > 0) {
                 rule.setMethods(Arrays.asList(config.default_methods()));
             }
@@ -458,6 +444,8 @@ public class SecurityFilter implements Filter {
                     rule.setParams(paramRules);
                 }
             }
+        } else {
+            rule.setAllowedReferrers(Collections.singletonList("abc.com"));
         }
 
         rule.init();
@@ -574,13 +562,8 @@ public class SecurityFilter implements Filter {
                     formatAppliedPolicyForLog(matchedPolicy));
         }
 
-        // 매칭된 정책에 대해 3대 검증기 체인(REFERER -> METHOD -> PARAM) 실행
+        // 매칭된 정책에 대해 검증기 체인(RUNMODE -> REFERER -> METHOD -> PARAM) 실행
         for (PolicyValidator validator : validators) {
-            if (!validator.isEnabled(matchedPolicy, servletSecurityConfig)) {
-                LOG.debug("  [-] Validator [{}] is skipped/disabled for target [{}]", validator.getName(), matchedPolicy.getTarget());
-                continue;
-            }
-
             LOG.debug("  [*] Executing validator [{}] for target [{}]", validator.getName(), matchedPolicy.getTarget());
             ValidationResult result = validator.validate(request, matchedPolicy, servletSecurityConfig);
             if (!result.isValid()) {

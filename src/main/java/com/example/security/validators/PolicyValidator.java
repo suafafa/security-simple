@@ -27,24 +27,6 @@ public interface PolicyValidator {
     }
 
     /**
-     * 루트 설정 및 개별 서블릿 정책의 On/Off 토글을 기반으로 현재 검증기의 활성화 여부를 판별합니다.
-     *
-     * @param policy     매칭된 서블릿 보안 정책 규칙
-     * @param rootConfig 루트 서블릿 보안 설정
-     * @return 활성화 상태이면 true, 검증을 생략(바이패스)해야 하면 false
-     */
-    default boolean isEnabled(ServletPolicyRule policy, ServletSecurityConfig rootConfig) {
-        String name = getName();
-        if (rootConfig != null && !rootConfig.isValidatorEnabled(name)) {
-            return false;
-        }
-        if (policy != null && !policy.isValidatorEnabled(name)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
      * 전역 설정({@link ServletSecurityConfig#getMode()})과 개별 서블릿 정책({@link ServletPolicyRule#getMode()})을 기반으로
      * 이 검증기의 실행 모드({@link PolicyMode#ENFORCE} 또는 {@link PolicyMode#MONITOR})를 판별합니다.
      * <ul>
