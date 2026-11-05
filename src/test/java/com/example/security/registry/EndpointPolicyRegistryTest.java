@@ -78,8 +78,8 @@ public class EndpointPolicyRegistryTest {
         assertTrue(matched.isMethodAllowed("POST"));
         assertFalse(matched.isMethodAllowed("GET"));
         assertTrue(matched.getParams().containsKey("name"));
-        assertTrue(matched.getParams().containsKey("inquirytype"));
-        assertTrue(matched.getParams().get("inquirytype").getCompiledPattern().matcher("billing").matches());
+        assertTrue(matched.getParams().containsKey("inquiryType"));
+        assertTrue(matched.getParams().get("inquiryType").getCompiledPattern().matcher("billing").matches());
 
         // 5. core-commerce의 /aemapi/order/inquiry 정책 검증
         when(request.getRequestURI()).thenReturn("/aemapi/order/inquiry");
@@ -89,8 +89,8 @@ public class EndpointPolicyRegistryTest {
         assertTrue(orderRule.isMethodAllowed("GET"));
         assertTrue(orderRule.isMethodAllowed("POST"));
         assertTrue(orderRule.getAllowedReferrers().contains("shop.abc.com"));
-        assertTrue(orderRule.getParams().containsKey("orderid"));
-        assertTrue(orderRule.getParams().containsKey("includehistory"));
+        assertTrue(orderRule.getParams().containsKey("orderId"));
+        assertTrue(orderRule.getParams().containsKey("includeHistory"));
 
         // SecurityFilter 로그 출처 포맷 확인
         String logSummary = securityFilter.formatAppliedPolicyForLog(matched);
@@ -210,29 +210,29 @@ public class EndpointPolicyRegistryTest {
         EndpointPolicyConfig testConfig = EndpointPolicyConfig.fromCfgJson("core-test", testJson);
         registry.bindPolicyConfig(testConfig, Collections.singletonMap("service.pid", testConfig.getConfigPid()));
 
-        // 1. /aemapi/test/dsl 의 모든 required 파라미터 등록 상태 확인
+        // 1. /aemapi/test/dsl 의 모든 required 파라미터 등록 상태 확인 (대소문자 구분)
         when(request.getRequestURI()).thenReturn("/aemapi/test/dsl");
         ServletPolicyRule dslRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertNotNull(dslRule);
-        assertTrue(dslRule.getParams().get("userid").isRequired());
-        assertTrue(dslRule.getParams().get("username").isRequired());
+        assertTrue(dslRule.getParams().get("userId").isRequired());
+        assertTrue(dslRule.getParams().get("userName").isRequired());
         assertTrue(dslRule.getParams().get("email").isRequired());
         assertTrue(dslRule.getParams().get("phone").isRequired());
         assertTrue(dslRule.getParams().get("code").isRequired());
         assertEquals("^[A-Z0-9]{4,10}$", dslRule.getParams().get("code").getPattern());
         assertTrue(dslRule.getParams().get("id").isRequired());
 
-        // 2. /aemapi/test/json-array 의 JSON 객체 배열 및 requiredParams 등록 상태 확인
+        // 2. /aemapi/test/json-array 의 JSON 객체 배열 및 requiredParams 등록 상태 확인 (대소문자 구분)
         when(request.getRequestURI()).thenReturn("/aemapi/test/json-array");
         ServletPolicyRule jsonArrayRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertNotNull(jsonArrayRule);
-        assertTrue(jsonArrayRule.getParams().get("accountno").isRequired());
-        assertEquals(Integer.valueOf(10), jsonArrayRule.getParams().get("accountno").getMinLength());
-        assertEquals(Integer.valueOf(14), jsonArrayRule.getParams().get("accountno").getMaxLength());
+        assertTrue(jsonArrayRule.getParams().get("accountNo").isRequired());
+        assertEquals(Integer.valueOf(10), jsonArrayRule.getParams().get("accountNo").getMinLength());
+        assertEquals(Integer.valueOf(14), jsonArrayRule.getParams().get("accountNo").getMaxLength());
         assertFalse(jsonArrayRule.getParams().get("memo").isRequired());
-        assertTrue(jsonArrayRule.getParams().get("txtoken").isRequired());
+        assertTrue(jsonArrayRule.getParams().get("txToken").isRequired());
 
-        // 3. ParamPolicyValidator 실제 필수 파라미터 누락 차단(SEC-40001) 검증
+        // 3. ParamPolicyValidator 실제 필수 파라미터 누락 차단(SEC-40001) 및 대소문자 구분 검증
         com.example.security.validators.ParamPolicyValidator validator = new com.example.security.validators.ParamPolicyValidator();
         when(request.getParameterMap()).thenReturn(Collections.emptyMap());
         com.example.security.validators.ValidationResult missingResult =
@@ -240,5 +240,24 @@ public class EndpointPolicyRegistryTest {
         assertFalse(missingResult.isValid());
         assertEquals(400, missingResult.getStatusCode());
         assertEquals("SEC-40001", missingResult.getSubCode());
+
+        // 대소문자가 다른 파라미터("accountno", "txtoken")로 요청 시 필수 파라미터("accountNo") 누락으로 차단되는지 검증
+        Map<String, String[]> wrongCaseParams = new java.util.LinkedHashMap<>();
+        wrongCaseParams.put("accountno", new String[]{"1234567890"});
+        wrongCaseParams.put("txtoken", new String[]{"tok123"});
+        when(request.getParameterMap()).thenReturn(wrongCaseParams);
+        com.example.security.validators.ValidationResult wrongCaseResult =
+                validator.validate(request, jsonArrayRule, securityFilter.getServletSecurityConfig());
+        assertFalse(wrongCaseResult.isValid());
+        assertEquals("SEC-40001", wrongCaseResult.getSubCode());
+
+        // 정확한 대소문자("accountNo", "txToken")로 요청 시 통과 검증
+        Map<String, String[]> exactCaseParams = new java.util.LinkedHashMap<>();
+        exactCaseParams.put("accountNo", new String[]{"1234567890"});
+        exactCaseParams.put("txToken", new String[]{"tok123"});
+        when(request.getParameterMap()).thenReturn(exactCaseParams);
+        com.example.security.validators.ValidationResult exactCaseResult =
+                validator.validate(request, jsonArrayRule, securityFilter.getServletSecurityConfig());
+        assertTrue(exactCaseResult.isValid());
     }
 }

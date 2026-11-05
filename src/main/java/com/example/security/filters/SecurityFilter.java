@@ -435,7 +435,7 @@ public class SecurityFilter implements Filter {
                     if (StringUtils.isNotBlank(spec)) {
                         Map.Entry<String, ParamRule> entry = ServletPolicyRule.parseSimpleParamSpec(spec);
                         if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
-                            paramRules.put(entry.getKey().toLowerCase(), entry.getValue());
+                            paramRules.put(entry.getKey().trim(), entry.getValue());
                         }
                     }
                 }

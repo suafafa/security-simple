@@ -115,7 +115,7 @@ public class ServletPolicyRule {
                 if (StringUtils.isNotBlank(entry.getKey()) && entry.getValue() != null) {
                     ParamRule rule = entry.getValue();
                     rule.init();
-                    map.put(entry.getKey().trim().toLowerCase(), rule);
+                    map.put(entry.getKey().trim(), rule);
                 }
             }
             this.lowerParams = Collections.unmodifiableMap(map);
@@ -308,7 +308,7 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 파라미터 이름을 키(소문자)로 하는 파라미터 검증 규칙 맵을 반환합니다.
+     * 파라미터 이름을 키(대소문자 구분)로 하는 파라미터 검증 규칙 맵을 반환합니다.
      *
      * @return 파라미터 규칙 Map
      */
@@ -330,11 +330,11 @@ public class ServletPolicyRule {
             if (params == null || params.isEmpty()) {
                 this.lowerParams = Collections.emptyMap();
             } else {
-                Map<String, ParamRule> tempParams = new HashMap<>(params.size());
+                Map<String, ParamRule> tempParams = new LinkedHashMap<>(params.size());
                 for (Map.Entry<String, ParamRule> entry : params.entrySet()) {
                     if (entry.getKey() != null && entry.getValue() != null) {
                         entry.getValue().init();
-                        tempParams.put(entry.getKey().trim().toLowerCase(), entry.getValue());
+                        tempParams.put(entry.getKey().trim(), entry.getValue());
                     }
                 }
                 this.lowerParams = Collections.unmodifiableMap(tempParams);
@@ -550,11 +550,11 @@ public class ServletPolicyRule {
 
         if (parent.params != null && !parent.params.isEmpty()) {
             Map<String, ParamRule> merged = new LinkedHashMap<>();
-            // 1. 개별 서블릿(.cfg.json)에 정의된 파라미터 규칙을 최우선으로 먼저 배치
+            // 1. 개별 서블릿(.cfg.json)에 정의된 파라미터 규칙을 최우선으로 먼저 배치 (대소문자 구분)
             if (this.params != null && !this.params.isEmpty()) {
                 for (Map.Entry<String, ParamRule> entry : this.params.entrySet()) {
                     if (entry.getKey() != null && entry.getValue() != null) {
-                        String key = entry.getKey().trim().toLowerCase();
+                        String key = entry.getKey().trim();
                         ParamRule childCopy = entry.getValue().copy();
                         // 부모(defaultPolicy)에 동일 파라미터가 있는 경우, 자식에 미지정된 길이/패턴 제약만 보완 상속
                         ParamRule parentRule = parent.getParams().get(key);
@@ -577,7 +577,7 @@ public class ServletPolicyRule {
             // 2. 개별 서블릿에 없는 공통 기본 파라미터(defaultPolicy)를 후순위로 병합
             for (Map.Entry<String, ParamRule> entry : parent.params.entrySet()) {
                 if (entry.getKey() != null && entry.getValue() != null) {
-                    String key = entry.getKey().trim().toLowerCase();
+                    String key = entry.getKey().trim();
                     if (!merged.containsKey(key)) {
                         merged.put(key, entry.getValue().copy());
                     }
@@ -655,7 +655,7 @@ public class ServletPolicyRule {
             Map<String, ParamRule> copiedParams = new LinkedHashMap<>(other.params.size());
             for (Map.Entry<String, ParamRule> entry : other.params.entrySet()) {
                 if (entry.getKey() != null && entry.getValue() != null) {
-                    copiedParams.put(entry.getKey().trim().toLowerCase(), entry.getValue().copy());
+                    copiedParams.put(entry.getKey().trim(), entry.getValue().copy());
                 }
             }
             this.params = copiedParams;
@@ -705,7 +705,7 @@ public class ServletPolicyRule {
         List<String> requiredParams = extractStringList(props, "requiredParams", "required_params", "security.requiredParams", "required");
         for (String reqParam : requiredParams) {
             if (StringUtils.isNotBlank(reqParam)) {
-                String key = stripWrappingQuotes(reqParam).toLowerCase();
+                String key = stripWrappingQuotes(reqParam).trim();
                 if (StringUtils.isNotBlank(key) && !"true".equalsIgnoreCase(key) && !"false".equalsIgnoreCase(key)) {
                     ParamRule pr = consolidatedParams.computeIfAbsent(key, k -> new ParamRule());
                     pr.setRequired(true);
@@ -832,7 +832,7 @@ public class ServletPolicyRule {
         for (String sub : subItems) {
             Map.Entry<String, ParamRule> entry = parseSimpleParamSpec(sub);
             if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
-                targetMap.put(entry.getKey().trim().toLowerCase(), entry.getValue());
+                targetMap.put(entry.getKey().trim(), entry.getValue());
             }
         }
     }
@@ -857,7 +857,7 @@ public class ServletPolicyRule {
             String pName = names.get(0);
             ParamRule pr = buildParamRuleFromMap(stringKeyMap);
             if (pr != null && StringUtils.isNotBlank(pName)) {
-                targetMap.put(pName.trim().toLowerCase(), pr);
+                targetMap.put(pName.trim(), pr);
             }
         } else {
             // {"userId": "required:alnum:4..20"} 또는 {"userId": {"required": true, ...}} 형태인 경우
@@ -876,7 +876,7 @@ public class ServletPolicyRule {
             if (pVal instanceof String) {
                 Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(pName + ":" + pVal.toString().trim());
                 if (parsed != null) {
-                    targetMap.put(pName.toLowerCase(), parsed.getValue());
+                    targetMap.put(pName, parsed.getValue());
                 }
             } else if (pVal instanceof Map<?, ?>) {
                 Map<String, Object> subMap = new LinkedHashMap<>();
@@ -887,7 +887,7 @@ public class ServletPolicyRule {
                 }
                 ParamRule pr = buildParamRuleFromMap(subMap);
                 if (pr != null) {
-                    targetMap.put(pName.toLowerCase(), pr);
+                    targetMap.put(pName, pr);
                 }
             }
         }

@@ -107,9 +107,6 @@ public class ParamPolicyValidator implements PolicyValidator {
                 ParamRule rule = null;
                 if (configuredParams != null && !configuredParams.isEmpty()) {
                     rule = configuredParams.get(paramName);
-                    if (rule == null) {
-                        rule = configuredParams.get(paramName.toLowerCase());
-                    }
                 }
 
                 // 2-1. 서블릿 정책에 정의되지 않은 파라미터 처리
@@ -274,27 +271,18 @@ public class ParamPolicyValidator implements PolicyValidator {
     }
 
     /**
-     * 요청 파라미터 맵에서 대소문자 구분 없이 파라미터 배열 값을 추출합니다.
-     * 1차로 정확히 일치하는 키를 O(1) 조회하고, 없을 경우에만 대소문자 무시 비교를 수행합니다.
+     * 요청 파라미터 맵에서 대소문자를 엄격히 구분하여 파라미터 배열 값을 추출합니다.
+     * (HTTP/Servlet 표준 스펙에 따라 파라미터 이름은 대소문자를 구분합니다.)
      *
      * @param parameterMap 요청 파라미터 맵
-     * @param paramName    찾을 파라미터 이름
+     * @param paramName    찾을 파라미터 이름 (대소문자 구분)
      * @return 파라미터 값 배열 (존재하지 않으면 null)
      */
     private static String[] getParameterValues(Map<String, String[]> parameterMap, String paramName) {
         if (parameterMap == null || paramName == null) {
             return null;
         }
-        String[] values = parameterMap.get(paramName);
-        if (values != null) {
-            return values;
-        }
-        for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
-            if (paramName.equalsIgnoreCase(entry.getKey())) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        return parameterMap.get(paramName);
     }
 
     /**
