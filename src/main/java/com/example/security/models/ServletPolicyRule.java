@@ -70,7 +70,6 @@ public class ServletPolicyRule {
     // 런타임 캐시 필드
     private transient Set<String> upperMethods;
     private transient Set<String> lowerAllowedReferrers;
-    private transient PolicyMode resolvedMode;
     private transient Map<String, ParamRule> lowerParams;
     private transient Pattern compiledTargetPattern;
 
@@ -124,7 +123,11 @@ public class ServletPolicyRule {
             this.lowerParams = Collections.emptyMap();
         }
 
-        this.resolvedMode = PolicyMode.fromString(this.mode);
+        if (StringUtils.isNotBlank(this.mode)) {
+            this.mode = "MONITOR".equalsIgnoreCase(this.mode.trim()) ? "MONITOR" : "ENFORCE";
+        } else {
+            this.mode = null;
+        }
 
         List<String> errors = new ArrayList<>();
         validate(errors);
@@ -376,35 +379,28 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 이 서블릿 정책에 설정된 {@link PolicyMode}({@code ENFORCE} 또는 {@code MONITOR})를 반환합니다.
+     * 이 서블릿 정책에 설정된 실행 모드({@code "ENFORCE"} 또는 {@code "MONITOR"})를 반환합니다.
      *
-     * @return 설정된 {@link PolicyMode} (미설정 시 null)
+     * @return 설정된 모드 문자열 (미설정 시 null)
      */
-    public PolicyMode getMode() {
-        if (resolvedMode != null) {
-            return resolvedMode;
+    public String getMode() {
+        if (StringUtils.isBlank(mode)) {
+            return null;
         }
-        return PolicyMode.fromString(mode);
+        return "MONITOR".equalsIgnoreCase(mode.trim()) ? "MONITOR" : "ENFORCE";
     }
 
     /**
-     * 이 서블릿 정책의 {@link PolicyMode}를 설정합니다.
-     *
-     * @param policyMode 설정할 {@link PolicyMode}
-     */
-    public void setMode(final PolicyMode policyMode) {
-        this.resolvedMode = policyMode;
-        this.mode = policyMode != null ? policyMode.name() : null;
-    }
-
-    /**
-     * 문자열("ENFORCE" 또는 "MONITOR")로 이 서블릿 정책의 모드를 설정합니다.
+     * 문자열({@code "ENFORCE"} 또는 {@code "MONITOR"})로 이 서블릿 정책의 모드를 설정합니다.
      *
      * @param mode 설정할 모드 문자열
      */
     public void setMode(final String mode) {
-        this.mode = mode;
-        this.resolvedMode = PolicyMode.fromString(mode);
+        if (StringUtils.isBlank(mode)) {
+            this.mode = null;
+        } else {
+            this.mode = "MONITOR".equalsIgnoreCase(mode.trim()) ? "MONITOR" : "ENFORCE";
+        }
     }
 
     /**
@@ -532,7 +528,6 @@ public class ServletPolicyRule {
 
         if (StringUtils.isBlank(this.mode) && StringUtils.isNotBlank(parent.mode)) {
             this.mode = parent.mode;
-            this.resolvedMode = parent.resolvedMode;
         }
 
         if ((this.methods == null || this.methods.isEmpty()) && parent.methods != null && !parent.methods.isEmpty()) {
@@ -615,7 +610,6 @@ public class ServletPolicyRule {
         this.target = other.target;
         this.enabled = other.enabled;
         this.mode = other.mode;
-        this.resolvedMode = other.resolvedMode;
         this.methods = other.methods != null ? new ArrayList<>(other.methods) : null;
         this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
         this.allowUndefinedParams = other.allowUndefinedParams;

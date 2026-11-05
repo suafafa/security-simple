@@ -30,11 +30,11 @@ public class ServletSecurityConfig {
     private Boolean enabled = true;
 
     /**
-     * 전역 보안 실행 모드 ({@code ENFORCE} 또는 {@code MONITOR}).
-     * 전역 모드가 {@link PolicyMode#MONITOR}로 설정되면 모든 서블릿 및 검증기에서 차단 대신 WARN 로그만 남기고 통과합니다.
+     * 전역 보안 실행 모드 ({@code "ENFORCE"} 또는 {@code "MONITOR"}).
+     * 전역 모드가 {@code "MONITOR"}로 설정되면 모든 서블릿 및 검증기에서 차단 대신 WARN 로그만 남기고 통과합니다.
      */
     @SerializedName(value = "mode", alternate = {"policyMode", "securityMode"})
-    private PolicyMode mode = PolicyMode.ENFORCE;
+    private String mode = "ENFORCE";
 
     @SerializedName(value = "defaultPolicy", alternate = {"default", "globalPolicy"})
     private ServletPolicyRule defaultPolicy;
@@ -65,9 +65,7 @@ public class ServletSecurityConfig {
      * 루트 설정 및 기본 정책(defaultPolicy)의 유효성을 검증하고 인덱스를 초기화합니다.
      */
     public final void init() {
-        if (this.mode == null) {
-            this.mode = PolicyMode.ENFORCE;
-        }
+        this.mode = "MONITOR".equalsIgnoreCase(StringUtils.trimToEmpty(this.mode)) ? "MONITOR" : "ENFORCE";
 
         List<String> allValidationErrors = new ArrayList<>();
 
@@ -352,29 +350,20 @@ public class ServletSecurityConfig {
     }
 
     /**
-     * 전역 보안 실행 모드({@link PolicyMode#ENFORCE} 또는 {@link PolicyMode#MONITOR})를 반환합니다.
+     * 전역 보안 실행 모드({@code "ENFORCE"} 또는 {@code "MONITOR"})를 반환합니다.
      *
-     * @return 전역 {@link PolicyMode} (기본값 {@link PolicyMode#ENFORCE})
+     * @return 전역 실행 모드 문자열 (기본값 {@code "ENFORCE"})
      */
-    public PolicyMode getMode() {
-        return mode != null ? mode : PolicyMode.ENFORCE;
+    public String getMode() {
+        return "MONITOR".equalsIgnoreCase(StringUtils.trimToEmpty(mode)) ? "MONITOR" : "ENFORCE";
     }
 
     /**
-     * 전역 보안 실행 모드를 설정합니다.
-     *
-     * @param mode 설정할 {@link PolicyMode}
-     */
-    public void setMode(final PolicyMode mode) {
-        this.mode = mode != null ? mode : PolicyMode.ENFORCE;
-    }
-
-    /**
-     * 문자열("ENFORCE", "MONITOR" 등)로 전역 보안 실행 모드를 설정합니다.
+     * 문자열({@code "ENFORCE"} 또는 {@code "MONITOR"})로 전역 보안 실행 모드를 설정합니다.
      *
      * @param modeStr 설정할 모드 문자열
      */
     public void setMode(final String modeStr) {
-        this.mode = PolicyMode.fromStringOrDefault(modeStr, PolicyMode.ENFORCE);
+        this.mode = "MONITOR".equalsIgnoreCase(StringUtils.trimToEmpty(modeStr)) ? "MONITOR" : "ENFORCE";
     }
 }

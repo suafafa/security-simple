@@ -800,7 +800,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-header teal" style="font-size:12.5px;padding:6px 10px;">«Container» ServletSecurityConfig</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:8px 10px;gap:2px;">
               <div>- enabled : Boolean = true</div>
-              <div>- mode : PolicyMode = PolicyMode.ENFORCE</div>
+              <div>- mode : String = "ENFORCE"</div>
               <div>- defaultPolicy : ServletPolicyRule</div>
               <div>- exactUriMap : Map&lt;String, ServletPolicyRule&gt;</div>
               <div>- resourceTypeMap : Map&lt;String, ServletPolicyRule&gt;</div>
@@ -809,21 +809,21 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>+ init() : void / findMatchingPolicy(req) : Rule</div>
               <div>+ registerPolicy(rule) / unregisterPolicy(target)</div>
               <div>+ clearPolicies() : void</div>
-              <div>+ getMode() : PolicyMode / setMode(mode)</div>
+              <div>+ getMode() : String / setMode(mode)</div>
             </div>
           </div>
           <div class="card" style="border-color:#2563eb;flex:1;">
             <div class="card-header" style="font-size:12.5px;padding:6px 10px;">«Model» ServletPolicyRule</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.5px;padding:8px 10px;gap:2px;">
               <div>- target : String / enabled : Boolean</div>
-              <div>- mode : String (resolvedMode : PolicyMode)</div>
+              <div>- mode : String ("ENFORCE" | "MONITOR")</div>
               <div>- methods : List (upperMethods : Set)</div>
               <div>- allowedReferrers : List / allowUndefinedParams : Boolean</div>
               <div>- params : Map&lt;String, ParamRule&gt; / extensions : Map</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
               <div>+ init() / validate(errors) / matches(req) : boolean</div>
               <div>+ inheritFrom(ServletPolicyRule) / copyFrom(other)</div>
-              <div>+ getMode() : PolicyMode / getExtensionLowerSet(keys...)</div>
+              <div>+ getMode() : String / getExtensionLowerSet(keys...)</div>
               <div>+ fromPolicyJsonEntry() / parseSimpleParamSpec(spec)</div>
             </div>
           </div>
@@ -833,7 +833,7 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             <div class="card-header indigo" style="font-size:12px;padding:6px 10px;">«Interface &amp; Base» PolicyValidator / AbstractPolicyValidator</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.4px;padding:6px 10px;gap:2px;">
               <div>+ getName() : String / getOrder() : int = 100</div>
-              <div>+ resolveMode(policy, rootConfig) : PolicyMode</div>
+              <div>+ resolveMode(policy, rootConfig) : String</div>
               <div>+ validate(req, policy, cfg) / # doValidate(...)</div>
             </div>
           </div>
@@ -876,9 +876,8 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
             </div>
           </div>
           <div class="card" style="border-color:#dc2626;flex:1;">
-            <div class="card-header red" style="font-size:12px;padding:6px 10px;">«Enums» PolicyMode &amp; SecurityErrorCode</div>
+            <div class="card-header red" style="font-size:12px;padding:6px 10px;">«Enum» SecurityErrorCode</div>
             <div class="card-body" style="font-family:Consolas,monospace;font-size:10.3px;padding:8px 10px;gap:2px;">
-              <div><strong>[PolicyMode]</strong> ENFORCE (차단), MONITOR (로그전용)</div>
               <div>RUNMODE_NOT_ALLOWED (403, SEC-40305)</div>
               <div>REFERER_UNTRUSTED (403, SEC-40303)</div>
               <div>METHOD_NOT_ALLOWED (405, SEC-40501)</div>
@@ -888,7 +887,6 @@ for (PolicyValidator validator : validators) { // REFERER -> METHOD -> PARAM
               <div>PARAM_INVALID_FORMAT (SEC-40005)</div>
               <div>PARAM_PATH_TRAVERSAL (SEC-40007)</div>
               <hr style="border:0;border-top:1px solid #cbd5e1;margin:3px 0;"/>
-              <div>+ PolicyMode.fromString(val) / isMonitor()</div>
               <div>+ getHttpStatus() / getSubCode() / format(...)</div>
             </div>
           </div>

@@ -1,7 +1,6 @@
 package com.example.security.filters;
 
 import com.example.security.models.ParamRule;
-import com.example.security.models.PolicyMode;
 import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.registry.EndpointPolicyRegistry;
@@ -569,10 +568,10 @@ public class SecurityFilter implements Filter {
             if (!result.isValid()) {
                 String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
                 String blockedConfigInfo = StringUtils.defaultIfBlank(result.getBlockedConfig(), result.getViolationDetail());
-                PolicyMode effectiveMode = validator.resolveMode(matchedPolicy, servletSecurityConfig);
+                String effectiveMode = validator.resolveMode(matchedPolicy, servletSecurityConfig);
 
                 // MONITOR 모드인 경우: 에러 응답을 반환하지 않고 WARN 감사 로그만 남긴 뒤 다음 검증기(또는 서블릿)로 계속 진행
-                if (effectiveMode == PolicyMode.MONITOR) {
+                if ("MONITOR".equalsIgnoreCase(effectiveMode)) {
                     handleSecurityMonitorLog(request, matchedPolicy, validator.getName(), result.getStatusCode(),
                             result.getSubCode(), result.getViolationDetail(), blockedConfigInfo, appliedPolicyInfo);
                     continue;
@@ -629,7 +628,7 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * {@link PolicyMode#MONITOR} 모드에서 보안 정책 위반이 감지되었을 때 호출됩니다.
+     * {@code MONITOR} 모드에서 보안 정책 위반이 감지되었을 때 호출됩니다.
      * 클라이언트에 에러를 반환하지 않고, 위반 내역({@code BlockedByConfig})과 적용 정책({@code AppliedServletPolicy})을
      * WARN 로그로 상세히 기록한 뒤 요청이 계속 진행되도록 합니다.
      *

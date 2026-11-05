@@ -92,7 +92,7 @@ public class PolicyModeExecutionTest {
         registry.bindPolicyConfig(cfg, Collections.singletonMap("service.pid", cfg.getConfigPid()));
 
         // 전역 모드는 ENFORCE 상태 확인
-        assertEquals(PolicyMode.ENFORCE, securityFilter.getServletSecurityConfig().getMode());
+        assertEquals("ENFORCE", securityFilter.getServletSecurityConfig().getMode());
 
         // Referer 누락(403 위반) + DELETE 메서드(405 위반) + 필수 파라미터 userId 누락(400 위반) 동시 발생
         when(request.getRequestURI()).thenReturn("/aemapi/mode/monitor");
@@ -124,7 +124,7 @@ public class PolicyModeExecutionTest {
         registry.bindPolicyConfig(cfg, Collections.singletonMap("service.pid", cfg.getConfigPid()));
 
         // 전체 설정을 MONITOR로 변경
-        securityFilter.getServletSecurityConfig().setMode(PolicyMode.MONITOR);
+        securityFilter.getServletSecurityConfig().setMode("MONITOR");
 
         when(request.getRequestURI()).thenReturn("/aemapi/mode/strict");
         when(request.getHeader("Referer")).thenReturn("https://evil.com");
