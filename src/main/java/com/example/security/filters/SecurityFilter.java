@@ -100,15 +100,6 @@ public class SecurityFilter implements Filter {
         )
         String sling_filter_pattern() default "(/aemapi/.*|/sysapi/.*)";
 
-        @AttributeDefinition(name = "Enable Referer Validator", description = "Globally enable/disable Referer validator")
-        boolean validator_referer_enabled() default true;
-
-        @AttributeDefinition(name = "Enable Method Validator", description = "Globally enable/disable Method validator")
-        boolean validator_method_enabled() default true;
-
-        @AttributeDefinition(name = "Enable Param Validator", description = "Globally enable/disable Param validator")
-        boolean validator_param_enabled() default true;
-
         @AttributeDefinition(
                 name = "Disabled Validators (Names)",
                 description = "List of validator names to disable globally (e.g. RUNMODE, CSRF, REFERER). Allows disabling newly added custom validators without changing Config interface."
@@ -411,9 +402,6 @@ public class SecurityFilter implements Filter {
 
             if (config != null) {
                 newConfig.setMode(config.mode());
-                if (!config.validator_referer_enabled()) newConfig.setValidatorEnabled("REFERER", false);
-                if (!config.validator_method_enabled())  newConfig.setValidatorEnabled("METHOD", false);
-                if (!config.validator_param_enabled())   newConfig.setValidatorEnabled("PARAM", false);
                 if (config.disabled_validators() != null) {
                     for (String disabledName : config.disabled_validators()) {
                         if (StringUtils.isNotBlank(disabledName)) {
