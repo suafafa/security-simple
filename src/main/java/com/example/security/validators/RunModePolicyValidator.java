@@ -46,10 +46,13 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
     public static final int ORDER = 5;
 
     private static final String[] ALLOWED_RUNMODE_KEYS = {
-            "runModes", "allowedRunModes", "runmodes", "allowed_run_modes", "security.runModes"
+            "runModes", "runMode", "allowedRunModes", "allowedRunMode",
+            "runmodes", "runmode", "allowed_run_modes", "allowed_run_mode",
+            "security.runModes", "security.runMode"
     };
     private static final String[] BLOCKED_RUNMODE_KEYS = {
-            "blockedRunModes", "deniedRunModes", "blocked_run_modes", "security.blockedRunModes"
+            "blockedRunModes", "blockedRunMode", "deniedRunModes", "deniedRunMode",
+            "blocked_run_modes", "blocked_run_mode", "security.blockedRunModes", "security.blockedRunMode"
     };
 
     @Reference(
@@ -103,10 +106,10 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
                     policy.getTarget(), activeRunModes, allowedRunModes, blockedRunModes);
         }
 
-        // 1. 차단 대상 RunMode(blockedRunModes)에 현재 RunMode가 하나라도 포함되면 즉시 차단
+        // 1. 차단 대상 RunMode(blockedRunModes)에 현재 RunMode가 하나라도 포함(대소문자 무시)되면 즉시 차단
         if (!blockedRunModes.isEmpty()) {
             for (String blocked : blockedRunModes) {
-                if (activeRunModes.contains(blocked)) {
+                if (containsIgnoreCase(activeRunModes, blocked)) {
                     String blockedConfig = "blockedRunModes=" + blockedRunModes + ", activeRunModes=" + activeRunModes;
                     return block(
                             policy,
@@ -119,11 +122,11 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
             }
         }
 
-        // 2. 허용 대상 RunMode(allowedRunModes)가 지정된 경우, 현재 RunMode와 최소 1개 이상 일치해야 통과
+        // 2. 허용 대상 RunMode(allowedRunModes)가 지정된 경우, 현재 RunMode와 최소 1개 이상 일치(대소문자 무시)해야 통과
         if (!allowedRunModes.isEmpty()) {
             boolean matched = false;
             for (String allowed : allowedRunModes) {
-                if (activeRunModes.contains(allowed)) {
+                if (containsIgnoreCase(activeRunModes, allowed)) {
                     matched = true;
                     break;
                 }
@@ -141,6 +144,22 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
+    }
+
+    private static boolean containsIgnoreCase(final Set<String> set, final String target) {
+        if (set == null || set.isEmpty() || StringUtils.isBlank(target)) {
+            return false;
+        }
+        String trimmedTarget = target.trim();
+        if (set.contains(trimmedTarget.toLowerCase())) {
+            return true;
+        }
+        for (String item : set) {
+            if (item != null && item.trim().equalsIgnoreCase(trimmedTarget)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

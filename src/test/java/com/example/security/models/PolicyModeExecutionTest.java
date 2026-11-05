@@ -82,7 +82,7 @@ public class PolicyModeExecutionTest {
                 "  \"policies\": [\n" +
                 "    {\n" +
                 "      \"target\": \"/aemapi/mode/monitor\",\n" +
-                "      \"mode\": \"MONITOR\",\n" +
+                "      \"MODE\": \"monitor\",\n" +
                 "      \"methods\": [\"POST\"],\n" +
                 "      \"params\": [\"userId:required:alnum:4..20\"]\n" +
                 "    }\n" +
@@ -123,8 +123,8 @@ public class PolicyModeExecutionTest {
         EndpointPolicyConfig cfg = EndpointPolicyConfig.fromCfgJson("core-mode", json);
         registry.bindPolicyConfig(cfg, Collections.singletonMap("service.pid", cfg.getConfigPid()));
 
-        // 전체 설정을 MONITOR로 변경
-        securityFilter.getServletSecurityConfig().setMode("MONITOR");
+        // 전체 설정을 소문자 "monitor"로 변경해도 대소문자 구분 없이 MONITOR로 동작하는지 확인
+        securityFilter.getServletSecurityConfig().setMode("monitor");
 
         when(request.getRequestURI()).thenReturn("/aemapi/mode/strict");
         when(request.getHeader("Referer")).thenReturn("https://evil.com");

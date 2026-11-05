@@ -586,18 +586,55 @@ public class ServletPolicyRule {
             this.params = merged;
         }
 
-        // 확장 속성(extensions) 상속: 자식 정책에 명시되지 않은 키만 부모(defaultPolicy)로부터 상속
+        // 확장 속성(extensions) 상속: 자식 정책에 명시되지 않은 키(대소문자 무시)만 부모(defaultPolicy)로부터 상속
         if (parent.extensions != null && !parent.extensions.isEmpty()) {
             if (this.extensions == null) {
                 this.extensions = new LinkedHashMap<>(parent.extensions);
             } else {
                 for (Map.Entry<String, Object> entry : parent.extensions.entrySet()) {
-                    if (entry.getKey() != null && !this.extensions.containsKey(entry.getKey())) {
+                    if (entry.getKey() != null && !containsKeyIgnoreCase(this.extensions, entry.getKey())) {
                         this.extensions.put(entry.getKey(), entry.getValue());
                     }
                 }
             }
         }
+    }
+
+    private static boolean containsKeyIgnoreCase(Map<String, ?> map, String key) {
+        if (map == null || key == null) {
+            return false;
+        }
+        if (map.containsKey(key)) {
+            return true;
+        }
+        boolean isRunModeKey = "runmodes".equalsIgnoreCase(key) || "runmode".equalsIgnoreCase(key)
+                || "allowedrunmodes".equalsIgnoreCase(key) || "allowedrunmode".equalsIgnoreCase(key);
+        for (String k : map.keySet()) {
+            if (k == null) continue;
+            if (k.equalsIgnoreCase(key)) {
+                return true;
+            }
+            if (isRunModeKey && ("runmodes".equalsIgnoreCase(k) || "runmode".equalsIgnoreCase(k)
+                    || "allowedrunmodes".equalsIgnoreCase(k) || "allowedrunmode".equalsIgnoreCase(k))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Object findValueIgnoreCase(Map<String, Object> props, String key) {
+        if (props == null || key == null) {
+            return null;
+        }
+        if (props.containsKey(key)) {
+            return props.get(key);
+        }
+        for (Map.Entry<String, Object> entry : props.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     /**
@@ -725,10 +762,10 @@ public class ServletPolicyRule {
     @SuppressWarnings("unchecked")
     private static void parseParamEntriesIntoMap(Map<String, Object> props, Map<String, ParamRule> targetMap, String... keys) {
         for (String key : keys) {
-            if (!props.containsKey(key) || props.get(key) == null) {
+            Object rawVal = findValueIgnoreCase(props, key);
+            if (rawVal == null) {
                 continue;
             }
-            Object rawVal = props.get(key);
             if (rawVal instanceof Map<?, ?>) {
                 parseParamMapObject((Map<?, ?>) rawVal, targetMap);
             } else if (rawVal instanceof Object[]) {
@@ -898,12 +935,12 @@ public class ServletPolicyRule {
     }
 
     /**
-     * Map에서 정수형 속성값을 추출합니다.
+     * Map에서 정수형 속성값을 추출합니다 (키 대소문자 무시).
      */
     private static Integer extractInteger(Map<String, Object> props, String... keys) {
         for (String k : keys) {
-            if (props.containsKey(k) && props.get(k) != null) {
-                Object val = props.get(k);
+            Object val = findValueIgnoreCase(props, k);
+            if (val != null) {
                 if (val instanceof Number) {
                     return ((Number) val).intValue();
                 } else if (val instanceof String) {
@@ -952,7 +989,7 @@ public class ServletPolicyRule {
     }
 
     /**
-     * OSGi 프로퍼티 맵에서 지정된 키들의 값을 문자열 리스트로 추출합니다.
+     * OSGi 프로퍼티 맵에서 지정된 키들의 값을 문자열 리스트로 추출합니다 (키 대소문자 무시).
      *
      * @param props OSGi 프로퍼티 맵
      * @param keys  검색할 키 목록
@@ -960,8 +997,8 @@ public class ServletPolicyRule {
      */
     private static List<String> extractStringList(Map<String, Object> props, String... keys) {
         for (String k : keys) {
-            if (props.containsKey(k)) {
-                Object val = props.get(k);
+            Object val = findValueIgnoreCase(props, k);
+            if (val != null) {
                 if (val instanceof Object[]) {
                     List<String> list = new ArrayList<>();
                     for (Object item : (Object[]) val) {
@@ -997,7 +1034,7 @@ public class ServletPolicyRule {
     }
 
     /**
-     * OSGi 프로퍼티 맵에서 지정된 키들의 값을 Boolean으로 추출합니다.
+     * OSGi 프로퍼티 맵에서 지정된 키들의 값을 Boolean으로 추출합니다 (키 대소문자 무시).
      *
      * @param props OSGi 프로퍼티 맵
      * @param keys  검색할 키 목록
@@ -1005,8 +1042,8 @@ public class ServletPolicyRule {
      */
     private static Boolean extractBoolean(Map<String, Object> props, String... keys) {
         for (String k : keys) {
-            if (props.containsKey(k)) {
-                Object val = props.get(k);
+            Object val = findValueIgnoreCase(props, k);
+            if (val != null) {
                 if (val instanceof Boolean) {
                     return (Boolean) val;
                 } else if (val instanceof String) {

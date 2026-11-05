@@ -88,8 +88,8 @@ public class RunModePolicyValidatorTest {
         ServletPolicyRule rule = rootConfig.findMatchingPolicy(request);
         assertNotNull(rule);
 
-        // 1. 현재 RunMode가 [author, dev] 일 때 -> 통과
-        runModeValidator.setActiveRunModes(new HashSet<>(Arrays.asList("author", "dev")));
+        // 1. 현재 RunMode가 [author, dev] 일 때 -> 통과 (대소문자 구분 없이 체크되는지도 함께 검증)
+        runModeValidator.setActiveRunModes(new HashSet<>(Arrays.asList("AUTHOR", "Dev")));
         ValidationResult passResult = runModeValidator.validate(request, rule, rootConfig);
         assertTrue(passResult.isValid());
 
