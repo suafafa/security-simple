@@ -432,6 +432,52 @@ public class ApiKeyPolicyValidator extends AbstractPolicyValidator {
 }
 ```
 
+### 6-4. 신규 Validator 추가 시 수정 필요 항목 체크리스트 (`SecurityFilter` 및 연관 파일)
+
+단순 외부 플러그인 형태라면 Validator 클래스 1개 작성만으로 OSGi 런타임(`@Reference(cardinality = MULTIPLE)`)에 자동 등록되지만, **프로젝트 기본 내장(Built-in) Validator로 추가하거나 전역 기본 정책(`default.*`) 및 표준 에러 코드를 함께 사용할 때**는 아래 파일들을 함께 수정해야 합니다:
+
+| 구분 | 수정 대상 파일 및 위치 | 수정 내용 및 이유 | 필수 여부 |
+| :---: | :--- | :--- | :---: |
+| **1** | **`SecurityFilter.java`**<br>기본 생성자 `public SecurityFilter()` | `registerValidator(new NewPolicyValidator());` 추가<br>• OSGi 컨테이너 외부(JUnit 단위 테스트에서 `new SecurityFilter()` 생성 등)에서도 기본 검증기 체인에 즉시 포함되도록 등록 | **필수 권장** |
+| **2** | **`SecurityErrorCode.java`**<br>`enum SecurityErrorCode` | 신규 표준 에러 코드 상수 추가 (예: `NEW_POLICY_VIOLATION(403, "SEC-40399", "Forbidden: ...")`)<br>• `blockCustom(...)` 대신 `block(policy, SecurityErrorCode.XXX, ...)`을 사용할 때 필요 | 선택<br>(표준 코드 사용 시) |
+| **3** | **`SecurityFilter.java`**<br>`@interface Config` & `buildDefaultPolicy(Config)` | 전역 OSGi 설정(`SecurityFilter.config`)에서 전사 기본값(`default.*`)을 주입받아 모든 서블릿 정책이 상속받게 할 때:<br>① `Config`에 `@AttributeDefinition default_xxx()` 메서드 추가<br>② `buildDefaultPolicy(Config)`에서 `rule.putExtension("xxx", ...)`으로 `defaultPolicy`에 주입 | 선택<br>(전역 `default.*` 필요 시) |
+| **4** | **`config/...SecurityFilter.config`**<br>및 **`EndpointPolicyConfig~*.cfg.json`** | • 전사 기본값 사용 시: `SecurityFilter.config`에 `default.xxx=...` 프로퍼티 추가<br>• 서블릿별 정책 적용 시: 각 번들의 `.cfg.json` 내 `policies` 항목에 해당 설정 키 추가 | 선택<br>(정책 설정 시) |
+
+#### 💡 `SecurityFilter.java` 수정 예시 (내장 등록 + 전역 `default.*` 설정 연동 시)
+
+```java
+// 1. 기본 생성자에 Validator 인스턴스 등록 (단위 테스트 및 비-OSGi 환경 호환)
+public SecurityFilter() {
+    registerValidator(new RunModePolicyValidator());
+    registerValidator(new RefererPolicyValidator());
+    registerValidator(new MethodPolicyValidator());
+    registerValidator(new ParamPolicyValidator());
+    registerValidator(new ApiKeyPolicyValidator()); // <-- 신규 Validator 등록
+}
+
+// 2. (선택) 전역 기본 정책(default.*) 속성이 필요한 경우 Config에 정의
+@ObjectClassDefinition(name = "AEM Lightweight Security Filter Configuration")
+public @interface Config {
+    // ...
+    @AttributeDefinition(name = "Default Policy: Required Header")
+    String default_requiredHeader() default "";
+}
+
+// 3. (선택) buildDefaultPolicy()에서 defaultPolicy의 extensions에 주입 (하위 서블릿 자동 상속)
+private ServletPolicyRule buildDefaultPolicy(final Config config) {
+    ServletPolicyRule rule = new ServletPolicyRule();
+    rule.setTarget("DEFAULT");
+    if (config != null) {
+        // ...
+        if (StringUtils.isNotBlank(config.default_requiredHeader())) {
+            rule.putExtension("requiredHeader", config.default_requiredHeader().trim());
+        }
+    }
+    rule.init();
+    return rule;
+}
+```
+
 ---
 
 ## 🚨 7. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
