@@ -432,49 +432,87 @@ public class ApiKeyPolicyValidator extends AbstractPolicyValidator {
 }
 ```
 
-### 6-4. 신규 Validator 추가 시 수정 필요 항목 체크리스트 (`SecurityFilter` 및 연관 파일)
+### 6-4. 신규 Validator 추가 시 수정 필요 항목 체크리스트 (`RunModePolicyValidator` 실제 적용 예시)
 
-단순 외부 플러그인 형태라면 Validator 클래스 1개 작성만으로 OSGi 런타임(`@Reference(cardinality = MULTIPLE)`)에 자동 등록되지만, **프로젝트 기본 내장(Built-in) Validator로 추가하거나 전역 기본 정책(`default.*`) 및 표준 에러 코드를 함께 사용할 때**는 아래 파일들을 함께 수정해야 합니다:
+단순 외부 플러그인 형태라면 Validator 클래스 1개 작성만으로 OSGi 런타임(`@Reference(cardinality = MULTIPLE)`)에 자동 등록되지만, **`RunModePolicyValidator`처럼 프로젝트 기본 내장(Built-in) Validator로 추가하고 전역 기본 정책(`default.runModes`) 및 표준 에러 코드(`SEC-40305`)를 함께 연동할 때**는 아래 파일들을 수정합니다:
 
-| 구분 | 수정 대상 파일 및 위치 | 수정 내용 및 이유 | 필수 여부 |
+| 순서 | 수정 대상 파일 및 위치 | `RunModePolicyValidator` 실제 반영 내용 | 필수 여부 |
 | :---: | :--- | :--- | :---: |
-| **1** | **`SecurityFilter.java`**<br>기본 생성자 `public SecurityFilter()` | `registerValidator(new NewPolicyValidator());` 추가<br>• OSGi 컨테이너 외부(JUnit 단위 테스트에서 `new SecurityFilter()` 생성 등)에서도 기본 검증기 체인에 즉시 포함되도록 등록 | **필수 권장** |
-| **2** | **`SecurityErrorCode.java`**<br>`enum SecurityErrorCode` | 신규 표준 에러 코드 상수 추가 (예: `NEW_POLICY_VIOLATION(403, "SEC-40399", "Forbidden: ...")`)<br>• `blockCustom(...)` 대신 `block(policy, SecurityErrorCode.XXX, ...)`을 사용할 때 필요 | 선택<br>(표준 코드 사용 시) |
-| **3** | **`SecurityFilter.java`**<br>`@interface Config` & `buildDefaultPolicy(Config)` | 전역 OSGi 설정(`SecurityFilter.config`)에서 전사 기본값(`default.*`)을 주입받아 모든 서블릿 정책이 상속받게 할 때:<br>① `Config`에 `@AttributeDefinition default_xxx()` 메서드 추가<br>② `buildDefaultPolicy(Config)`에서 `rule.putExtension("xxx", ...)`으로 `defaultPolicy`에 주입 | 선택<br>(전역 `default.*` 필요 시) |
-| **4** | **`config/...SecurityFilter.config`**<br>및 **`EndpointPolicyConfig~*.cfg.json`** | • 전사 기본값 사용 시: `SecurityFilter.config`에 `default.xxx=...` 프로퍼티 추가<br>• 서블릿별 정책 적용 시: 각 번들의 `.cfg.json` 내 `policies` 항목에 해당 설정 키 추가 | 선택<br>(정책 설정 시) |
+| **1** | **`RunModePolicyValidator.java`**<br>(신규 Validator 클래스 작성) | • `AbstractPolicyValidator` 상속 (`super("RUNMODE", 5)`) 및 `@Component(service = PolicyValidator.class, immediate = true)` 선언<br>• `policy.getExtensionLowerSet("runModes", ...)`으로 `.cfg.json` 설정 조회 후 `pass()` / `block(...)` 반환 | **필수** |
+| **2** | **`SecurityFilter.java`**<br>기본 생성자 `public SecurityFilter()` | • `registerValidator(new RunModePolicyValidator());` 추가<br>• OSGi 컨테이너 외부(JUnit 단위 테스트에서 `new SecurityFilter()` 생성 등)에서도 기본 검증기 체인에 즉시 포함되도록 등록 | **필수 권장** |
+| **3** | **`SecurityErrorCode.java`**<br>`enum SecurityErrorCode` | • `RUNMODE_NOT_ALLOWED(403, "SEC-40305", "Forbidden: Endpoint is not permitted in current runmode")` 상수 추가<br>• (`blockCustom(...)` 사용 시 생략 가능) | 선택<br>(표준 코드 사용 시) |
+| **4** | **`SecurityFilter.java`**<br>`@interface Config` & `buildDefaultPolicy(Config)` | • 전역 OSGi 설정(`SecurityFilter.config`)의 `default.runModes` 값을 읽어 모든 서블릿 정책이 기본 상속받도록 연동:<br>① `Config`에 `String[] default_runModes() default {};` 추가<br>② `buildDefaultPolicy(Config)`에서 `rule.putExtension("runModes", runModes)`로 `defaultPolicy`에 주입 | 선택<br>(전역 `default.*` 필요 시) |
+| **5** | **`SecurityFilter.config`** 및<br>**`EndpointPolicyConfig~*.cfg.json`** | • 전역 기본 설정: `SecurityFilter.config`에 `default.runModes=[]` 추가<br>• 서블릿별 정책: 각 번들의 `.cfg.json`에 `"runModes": ["author", "dev"]`, `"blockedRunModes": ["prod"]` 추가 | 선택<br>(정책 설정 시) |
 
-#### 💡 `SecurityFilter.java` 수정 예시 (내장 등록 + 전역 `default.*` 설정 연동 시)
+#### 💡 `RunModePolicyValidator` 추가 시 실제 코드 수정 내역 요약
 
+**① `SecurityErrorCode.java` — 표준 에러 코드 추가**
 ```java
-// 1. 기본 생성자에 Validator 인스턴스 등록 (단위 테스트 및 비-OSGi 환경 호환)
+public enum SecurityErrorCode {
+    // 403 Forbidden
+    REFERER_UNTRUSTED(403, "SEC-40303", "Forbidden: Invalid or untrusted Referer"),
+    RUNMODE_NOT_ALLOWED(403, "SEC-40305", "Forbidden: Endpoint is not permitted in current runmode"), // <-- 추가
+    // ...
+}
+```
+
+**② `SecurityFilter.java` — 기본 생성자 등록 및 전역 `default.runModes` 연동**
+```java
+// 1) 기본 생성자에 RunModePolicyValidator 등록 (단위 테스트 및 비-OSGi 환경 호환)
 public SecurityFilter() {
-    registerValidator(new RunModePolicyValidator());
+    registerValidator(new RunModePolicyValidator()); // <-- 추가 (order=5로 가장 먼저 실행)
     registerValidator(new RefererPolicyValidator());
     registerValidator(new MethodPolicyValidator());
     registerValidator(new ParamPolicyValidator());
-    registerValidator(new ApiKeyPolicyValidator()); // <-- 신규 Validator 등록
 }
 
-// 2. (선택) 전역 기본 정책(default.*) 속성이 필요한 경우 Config에 정의
+// 2) (선택) 전역 기본 정책(default.runModes) 속성을 Config에 정의
 @ObjectClassDefinition(name = "AEM Lightweight Security Filter Configuration")
 public @interface Config {
     // ...
-    @AttributeDefinition(name = "Default Policy: Required Header")
-    String default_requiredHeader() default "";
+    @AttributeDefinition(
+            name = "Default Policy: Allowed RunModes",
+            description = "Default allowed AEM run modes (e.g. author, publish, dev, stage, prod). Empty allows all run modes."
+    )
+    String[] default_runModes() default {};
 }
 
-// 3. (선택) buildDefaultPolicy()에서 defaultPolicy의 extensions에 주입 (하위 서블릿 자동 상속)
+// 3) (선택) buildDefaultPolicy()에서 defaultPolicy의 extensions 맵에 "runModes" 주입 (하위 서블릿 자동 상속)
 private ServletPolicyRule buildDefaultPolicy(final Config config) {
     ServletPolicyRule rule = new ServletPolicyRule();
     rule.setTarget("DEFAULT");
     if (config != null) {
-        // ...
-        if (StringUtils.isNotBlank(config.default_requiredHeader())) {
-            rule.putExtension("requiredHeader", config.default_requiredHeader().trim());
+        rule.setEnabled(config.default_enabled());
+        if (config.default_runModes() != null && config.default_runModes().length > 0) {
+            List<String> runModes = new ArrayList<>();
+            for (String rm : config.default_runModes()) {
+                if (StringUtils.isNotBlank(rm)) {
+                    runModes.add(rm.trim().toLowerCase());
+                }
+            }
+            if (!runModes.isEmpty()) {
+                rule.putExtension("runModes", runModes); // <-- 하위 정책으로 자동 상속됨
+            }
         }
+        // ...
     }
     rule.init();
     return rule;
+}
+```
+
+**③ `config/com.example.security.filters.SecurityFilter.config` 및 `.cfg.json` 설정**
+```ini
+# SecurityFilter.config (전역 기본값)
+default.runModes=[]
+```
+```json
+// EndpointPolicyConfig~core-member.cfg.json (개별 서블릿 정책)
+{
+  "target": "/aemapi/admin/reindex",
+  "runModes": ["author", "dev"],
+  "blockedRunModes": ["prod"],
+  "methods": ["POST"]
 }
 ```
 
