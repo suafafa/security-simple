@@ -6,8 +6,6 @@ import com.example.security.models.ServletSecurityConfig;
 import com.example.security.utils.SecurityUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.osgi.service.component.annotations.Component;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -20,44 +18,29 @@ import java.util.Set;
  * 일치하는지 검증하는 모듈형 검증기입니다.
  */
 @Component(service = PolicyValidator.class, immediate = true)
-public class RefererPolicyValidator implements PolicyValidator {
+public class RefererPolicyValidator extends AbstractPolicyValidator {
 
-    private static final Logger LOG = LoggerFactory.getLogger(RefererPolicyValidator.class);
+    public static final String NAME = "REFERER";
+    public static final int ORDER = 10;
 
-    @Override
-    public String getName() {
-        return "REFERER";
+    public RefererPolicyValidator() {
+        super(NAME, ORDER);
     }
 
     @Override
-    public int getOrder() {
-        return 10;
-    }
-
-    /**
-     * 요청의 Referer(또는 Origin) 헤더를 추출하여 허용된 도메인인지 검증합니다.
-     * 헤더가 누락되었거나 허용 도메인 목록과 일치하지 않으면 403 Forbidden (SEC-40303)으로 차단합니다.
-     */
-    @Override
-    public ValidationResult validate(HttpServletRequest request, ServletPolicyRule policy, ServletSecurityConfig rootConfig) {
+    protected ValidationResult doValidate(final HttpServletRequest request,
+                                          final ServletPolicyRule policy,
+                                          final ServletSecurityConfig rootConfig) {
         Set<String> effectiveReferrers = resolveEffectiveReferrers(policy, rootConfig);
-        String rawReferer = request != null ? StringUtils.defaultIfBlank(request.getHeader("Referer"), request.getHeader("Origin")) : null;
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("[REFERER] Referer 검증 시작 - target=[{}], 요청 Referer/Origin=[{}], 허용 도메인={}",
-                    policy != null ? policy.getTarget() : "null",
-                    SecurityUtils.sanitizeForLog(rawReferer),
-                    effectiveReferrers);
-        }
+        String rawReferer = request != null
+                ? StringUtils.defaultIfBlank(request.getHeader("Referer"), request.getHeader("Origin"))
+                : null;
 
         if (!isRefererAllowed(request, policy, rootConfig)) {
             String blockedConfig = "allowedReferrers=" + effectiveReferrers
                     + ", requestReferer=" + (rawReferer != null ? SecurityUtils.sanitizeForLog(rawReferer) : "MISSING");
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("[REFERER] Referer 검증 실패(차단) - target=[{}], BlockedByConfig=[{}]",
-                        policy != null ? policy.getTarget() : "null", blockedConfig);
-            }
-            return ValidationResult.errorWithConfig(
+            return block(
+                    policy,
                     SecurityErrorCode.REFERER_UNTRUSTED,
                     blockedConfig,
                     "Untrusted or missing Referer/Origin header [" + SecurityUtils.sanitizeForLog(rawReferer)
@@ -65,58 +48,44 @@ public class RefererPolicyValidator implements PolicyValidator {
                             + "] (allowedReferrers=" + effectiveReferrers + ")"
             );
         }
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("[REFERER] Referer 검증 통과 - target=[{}] | PassedConfig=[{}]",
-                    policy != null ? policy.getTarget() : "null", describePassedConfig(request, policy, rootConfig));
-        }
-        return ValidationResult.ok();
+        return pass();
     }
 
     @Override
-    public String describePassedConfig(HttpServletRequest request, ServletPolicyRule policy, ServletSecurityConfig rootConfig) {
+    public String describePassedConfig(final HttpServletRequest request,
+                                       final ServletPolicyRule policy,
+                                       final ServletSecurityConfig rootConfig) {
         Set<String> effectiveReferrers = resolveEffectiveReferrers(policy, rootConfig);
-        String reqReferer = request != null ? (StringUtils.defaultIfBlank(request.getHeader("Referer"), request.getHeader("Origin"))) : "null";
+        String reqReferer = request != null
+                ? StringUtils.defaultIfBlank(request.getHeader("Referer"), request.getHeader("Origin"))
+                : "null";
         return "allowedReferrers=" + effectiveReferrers + ", requestReferer=" + reqReferer;
     }
 
     /**
      * 요청의 Referer 또는 Origin 헤더에서 호스트명을 추출하여 허용 도메인 목록(allowedReferrers)과 일치하는지 판별합니다.
      */
-    public boolean isRefererAllowed(final HttpServletRequest request, final ServletPolicyRule policy, final ServletSecurityConfig rootConfig) {
-        String referer = request.getHeader("Referer");
-        if (StringUtils.isBlank(referer)) {
-            referer = request.getHeader("Origin");
-            if (LOG.isDebugEnabled() && StringUtils.isNotBlank(referer)) {
-                LOG.debug("[REFERER] Referer 헤더가 없어 Origin 헤더([{}])를 대체 사용합니다.", SecurityUtils.sanitizeForLog(referer));
-            }
+    public boolean isRefererAllowed(final HttpServletRequest request,
+                                    final ServletPolicyRule policy,
+                                    final ServletSecurityConfig rootConfig) {
+        if (request == null) {
+            return false;
         }
-
+        String referer = StringUtils.defaultIfBlank(request.getHeader("Referer"), request.getHeader("Origin"));
         if (StringUtils.isBlank(referer)) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("[REFERER] 요청에 Referer 및 Origin 헤더가 모두 누락되었습니다.");
-            }
             return false;
         }
 
         String host = extractHost(referer);
         if (StringUtils.isBlank(host)) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("[REFERER] Referer/Origin 값([{}])에서 유효한 호스트명을 추출할 수 없습니다.", SecurityUtils.sanitizeForLog(referer));
-            }
             return false;
         }
 
-        Set<String> effectiveReferrers = resolveEffectiveReferrers(policy, rootConfig);
-        for (String allowed : effectiveReferrers) {
+        for (String allowed : resolveEffectiveReferrers(policy, rootConfig)) {
             if (isDomainMatched(host, allowed)) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("[REFERER] 요청 호스트([{}])가 허용 도메인([{}])과 일치합니다.", host, allowed);
-                }
                 return true;
             }
         }
-
         return false;
     }
 

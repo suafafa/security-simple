@@ -16,7 +16,8 @@ public class TestRunner {
                 "com.example.security.validators.PathTraversalValidationTest",
                 "com.example.security.registry.EndpointPolicyRegistryTest",
                 "com.example.security.validators.RunModePolicyValidatorTest",
-                "com.example.security.models.PolicyModeExecutionTest"
+                "com.example.security.models.PolicyModeExecutionTest",
+                "com.example.security.validators.PortedValidatorsTest"
         );
 
         List<Class<?>> testClasses = new java.util.ArrayList<>();

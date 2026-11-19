@@ -5,11 +5,7 @@ import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.registry.EndpointPolicyRegistry;
 import com.example.security.utils.SecurityUtils;
-import com.example.security.validators.MethodPolicyValidator;
-import com.example.security.validators.ParamPolicyValidator;
 import com.example.security.validators.PolicyValidator;
-import com.example.security.validators.RefererPolicyValidator;
-import com.example.security.validators.RunModePolicyValidator;
 import com.example.security.validators.ValidationResult;
 import com.google.gson.Gson;
 import org.apache.commons.lang3.StringUtils;
@@ -127,7 +123,6 @@ public class SecurityFilter implements Filter {
 
     private static final Logger LOG = LoggerFactory.getLogger(SecurityFilter.class);
     private static final Gson GSON = new Gson();
-    private static final ServletPolicyRule REJECTED_POLICY = new ServletPolicyRule();
 
     private volatile boolean enabled = true;
     private volatile String filterPattern = DEFAULT_FILTER_PATTERN;
@@ -144,13 +139,9 @@ public class SecurityFilter implements Filter {
 
     /**
      * 기본 생성자입니다.
-     * OSGi 런타임 외부(단위 테스트 등)에서 생성될 때에도 기본 검증기들이 즉시 동작하도록 등록합니다.
+     * 모든 {@link PolicyValidator} 구현체는 OSGi 런타임에서 {@link #bindValidator(PolicyValidator)}를 통해 동적으로 바인딩됩니다.
      */
     public SecurityFilter() {
-        registerValidator(new RunModePolicyValidator());
-        registerValidator(new RefererPolicyValidator());
-        registerValidator(new MethodPolicyValidator());
-        registerValidator(new ParamPolicyValidator());
     }
 
     /**
@@ -512,8 +503,7 @@ public class SecurityFilter implements Filter {
                     httpRequest.getMethod(), requestUri, httpRequest.getQueryString(), SecurityUtils.getClientIp(httpRequest));
         }
 
-        ServletPolicyRule activePolicy = evaluatePoliciesAndFindActive(httpRequest, httpResponse);
-        if (activePolicy == REJECTED_POLICY) {
+        if (!evaluatePoliciesAndFindActive(httpRequest, httpResponse)) {
             LOG.debug("<-- [FILTER BLOCKED] Request [{} {}] was rejected by security policy.",
                     httpRequest.getMethod(), requestUri);
             return;
@@ -533,26 +523,26 @@ public class SecurityFilter implements Filter {
      *
      * @param request  유입된 HTTP 요청
      * @param response HTTP 응답
-     * @return 검증 통과 시 매칭된 {@link ServletPolicyRule}, 차단 시 {@link #REJECTED_POLICY}, 정책 미적용 시 null
+     * @return 요청 허용(검증 통과 또는 정책 미적용/비활성) 시 {@code true}, 보안 위반으로 차단 시 {@code false}
      * @throws IOException 응답 작성 중 입출력 예외 발생 시
      */
-    private ServletPolicyRule evaluatePoliciesAndFindActive(final HttpServletRequest request,
-                                                            final HttpServletResponse response) throws IOException {
+    private boolean evaluatePoliciesAndFindActive(final HttpServletRequest request,
+                                                  final HttpServletResponse response) throws IOException {
         if (servletSecurityConfig == null || !servletSecurityConfig.isEnabled()) {
             LOG.debug("ServletSecurityConfig is null or disabled. Skipping policy evaluation for URI=[{}]", request.getRequestURI());
-            return null;
+            return true;
         }
 
         ServletPolicyRule matchedPolicy = servletSecurityConfig.findMatchingPolicy(request);
         if (matchedPolicy == null) {
             LOG.debug("No matching security policy found for URI=[{}]. Allowing request.", request.getRequestURI());
-            return null;
+            return true;
         }
 
         if (!matchedPolicy.isEnabled()) {
             LOG.debug("Matched policy target=[{}] has enabled=false. Bypassing security validation for URI=[{}].",
                     matchedPolicy.getTarget(), request.getRequestURI());
-            return matchedPolicy;
+            return true;
         }
 
         if (LOG.isDebugEnabled()) {
@@ -582,7 +572,7 @@ public class SecurityFilter implements Filter {
                         result.getResponseMessage(), blockedConfigInfo, appliedPolicyInfo);
                 handleSecurityViolation(request, response, matchedPolicy, validator.getName(), result.getStatusCode(),
                         result.getSubCode(), result.getViolationDetail(), blockedConfigInfo, result.getResponseMessage());
-                return REJECTED_POLICY;
+                return false;
             }
             if (LOG.isDebugEnabled()) {
                 LOG.debug("  [+] Validator [{}] PASSED for target [{}] | PassedConfig=[{}]",
@@ -592,7 +582,7 @@ public class SecurityFilter implements Filter {
         }
 
         LOG.debug("All active validators PASSED for target [{}] on URI [{}]", matchedPolicy.getTarget(), request.getRequestURI());
-        return matchedPolicy;
+        return true;
     }
 
     /**

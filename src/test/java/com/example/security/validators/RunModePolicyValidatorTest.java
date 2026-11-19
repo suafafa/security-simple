@@ -54,14 +54,31 @@ public class RunModePolicyValidatorTest {
     }
 
     @Test
-    @DisplayName("OSGi 동적 바인딩 시 getOrder() 우선순위(RUNMODE=5 -> REFERER=10 -> METHOD=20 -> PARAM=30)대로 자동 정렬 검증")
+    @DisplayName("OSGi 동적 바인딩 시 getOrder() 우선순위대로 전체 Validator 체인 자동 정렬 검증")
     void testValidatorOrderingAndAutoRegistration() {
+        // 순서와 무관하게 OSGi 동적 바인딩(bindValidator)이 호출되더라도 getOrder() 오름차순으로 정렬되는지 검증
+        securityFilter.bindValidator(new ResponsePolicyValidator());
+        securityFilter.bindValidator(new ParamPolicyValidator());
+        securityFilter.bindValidator(new MethodPolicyValidator());
+        securityFilter.bindValidator(new RefererPolicyValidator());
+        securityFilter.bindValidator(new OpenRedirectPolicyValidator());
+        securityFilter.bindValidator(new PayloadSizePolicyValidator());
+        securityFilter.bindValidator(new CsrfPolicyValidator());
+        securityFilter.bindValidator(new AuthPolicyValidator());
+        securityFilter.bindValidator(new RateLimitPolicyValidator());
+
         List<PolicyValidator> validators = securityFilter.getValidators();
-        assertEquals(4, validators.size());
+        assertEquals(10, validators.size());
         assertEquals("RUNMODE", validators.get(0).getName());
-        assertEquals("REFERER", validators.get(1).getName());
-        assertEquals("METHOD", validators.get(2).getName());
-        assertEquals("PARAM", validators.get(3).getName());
+        assertEquals("RATE_LIMIT", validators.get(1).getName());
+        assertEquals("REFERER", validators.get(2).getName());
+        assertEquals("AUTH", validators.get(3).getName());
+        assertEquals("CSRF", validators.get(4).getName());
+        assertEquals("METHOD", validators.get(5).getName());
+        assertEquals("PAYLOAD_SIZE", validators.get(6).getName());
+        assertEquals("PARAM", validators.get(7).getName());
+        assertEquals("OPEN_REDIRECT", validators.get(8).getName());
+        assertEquals("RESPONSE", validators.get(9).getName());
     }
 
     @Test

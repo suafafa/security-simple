@@ -3,6 +3,9 @@ package com.example.security.models;
 import com.example.security.filters.SecurityFilter;
 import com.example.security.registry.EndpointPolicyConfig;
 import com.example.security.registry.EndpointPolicyRegistryImpl;
+import com.example.security.validators.MethodPolicyValidator;
+import com.example.security.validators.ParamPolicyValidator;
+import com.example.security.validators.RefererPolicyValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,9 @@ public class PolicyModeExecutionTest {
     void setUp() {
         registry = new EndpointPolicyRegistryImpl();
         securityFilter = new SecurityFilter();
+        securityFilter.bindValidator(new RefererPolicyValidator());
+        securityFilter.bindValidator(new MethodPolicyValidator());
+        securityFilter.bindValidator(new ParamPolicyValidator());
         securityFilter.activate(null); // 기본 전역 mode = ENFORCE
         securityFilter.bindPolicyRegistry(registry);
     }

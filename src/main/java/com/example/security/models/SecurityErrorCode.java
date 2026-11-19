@@ -6,25 +6,61 @@ package com.example.security.models;
  */
 public enum SecurityErrorCode {
 
-    // 403 Forbidden (Referer 및 RunMode 검증 실패)
+    // 401 Unauthorized (인증 필요)
+    AUTH_REQUIRED(401, "SEC-40101", "Unauthorized: Authentication required"),
+
+    // 403 Forbidden (권한, 보안 토큰, Referer 및 RunMode 검증 실패)
+    AUTH_TYPE_FORBIDDEN(403, "SEC-40301", "Forbidden: Access denied for auth type: %s"),
+    ROLE_INSUFFICIENT(403, "SEC-40302", "Forbidden: Insufficient role permissions"),
     REFERER_UNTRUSTED(403, "SEC-40303", "Forbidden: Invalid or untrusted Referer"),
+    CSRF_TOKEN_REQUIRED(403, "SEC-40304", "Forbidden: CSRF token is required"),
     RUNMODE_NOT_ALLOWED(403, "SEC-40305", "Forbidden: Endpoint is not permitted in current runmode"),
+    CSRF_TOKEN_INVALID(403, "SEC-40306", "Forbidden: Invalid CSRF token"),
+    OAUTH_STATE_REQUIRED(403, "SEC-40307", "Forbidden: OAuth state is required for CSRF validation"),
+    OAUTH_STATE_MISMATCH(403, "SEC-40308", "Forbidden: OAuth state mismatch"),
+    GRANITE_CSRF_REQUIRED(403, "SEC-40309", "Forbidden: Granite CSRF token is required"),
+    GRANITE_CSRF_INVALID(403, "SEC-40310", "Forbidden: Invalid Granite CSRF token"),
 
     // 405 Method Not Allowed (HTTP 메서드 제한)
     METHOD_NOT_ALLOWED(405, "SEC-40501", "Method Not Allowed: %s"),
 
-    // 400 Bad Request (파라미터 제약조건 및 경로 조작 방어)
+    // 400 Bad Request (파라미터 제약조건, 경로 조작, 오픈 리다이렉트 방어)
     PARAM_REQUIRED(400, "SEC-40001", "Bad Request: Missing required parameter: %s"),
     PARAM_UNDEFINED(400, "SEC-40002", "Bad Request: Parameter [%s] is not permitted"),
     PARAM_TOO_SHORT(400, "SEC-40003", "Bad Request: Parameter [%s] is too short (min: %d)"),
     PARAM_TOO_LONG(400, "SEC-40004", "Bad Request: Parameter [%s] exceeds max length of %d"),
     PARAM_INVALID_FORMAT(400, "SEC-40005", "Bad Request: Parameter [%s] has invalid format"),
+    RESPONSE_TYPE_JSONP_INVALID(400, "SEC-40006", "Bad Request: Invalid JSONP callback parameter: %s"),
 
     /**
      * CWE-22: Path Traversal / Directory Traversal 방어 에러 코드
      * 파라미터 값에 상위 디렉토리 이동(../, ..\), 2중 URL 인코딩(%252e%252e), 널 바이트(%00) 주입이 감지되었을 때 반환
      */
-    PARAM_PATH_TRAVERSAL(400, "SEC-40007", "Bad Request: Potential Path Traversal attack detected in parameter [%s]");
+    PARAM_PATH_TRAVERSAL(400, "SEC-40007", "Bad Request: Potential Path Traversal attack detected in parameter [%s]"),
+
+    /**
+     * CWE-89: SQL / JCR-SQL2 / XPath Injection 방어 에러 코드
+     */
+    PARAM_SQL_INJECTION(400, "SEC-40008", "Bad Request: Potential SQL/JCR Injection attack detected in parameter [%s]"),
+
+    /**
+     * CWE-79: Cross-Site Scripting (XSS) 방어 에러 코드
+     */
+    PARAM_XSS(400, "SEC-40009", "Bad Request: Potential Cross-Site Scripting (XSS) attack detected in parameter [%s]"),
+
+    /**
+     * CWE-601: Open Redirect (오픈 리다이렉트) 방어 에러 코드
+     */
+    OPEN_REDIRECT_FORBIDDEN(400, "SEC-40010", "Bad Request: Untrusted or invalid redirect URL: %s"),
+
+    // 406 Not Acceptable & Response Validation (응답 타입 제약조건)
+    RESPONSE_TYPE_NOT_ACCEPTABLE(406, "SEC-40601", "Not Acceptable: Client Accept header [%s] incompatible with required responseType [%s]"),
+
+    // 413 Payload Too Large (요청 페이로드 크기 초과)
+    PAYLOAD_TOO_LARGE(413, "SEC-41301", "Payload Too Large: Request body exceeds maximum allowed size of %d bytes"),
+
+    // 429 Too Many Requests (Rate Limiting 속도 제한 초과)
+    RATE_LIMIT_EXCEEDED(429, "SEC-42901", "Too Many Requests: Rate limit exceeded for target [%s]. Retry after %d seconds");
 
     private final int httpStatus;
     private final String subCode;
