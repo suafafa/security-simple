@@ -249,25 +249,6 @@ public class ServletPolicyRule {
     }
 
     /**
-     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 원본 객체 값을 조회합니다.
-     *
-     * @param keys 조회할 설정 키 후보 목록
-     * @return 매칭된 원본 객체 (미설정 시 null)
-     */
-    public Object getExtension(String... keys) {
-        if (extensions == null || extensions.isEmpty() || keys == null) {
-            return null;
-        }
-        for (String k : keys) {
-            Object val = findValueIgnoreCase(extensions, k);
-            if (val != null) {
-                return val;
-            }
-        }
-        return null;
-    }
-
-    /**
      * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 값을 문자열 리스트로 조회합니다.
      *
      * @param keys 조회할 설정 키 후보 목록

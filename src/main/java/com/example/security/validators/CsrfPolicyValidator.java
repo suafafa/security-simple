@@ -10,7 +10,6 @@ import org.osgi.service.component.annotations.Component;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
@@ -40,12 +39,6 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
     private static final String[] CSRF_KEYS = {
             "csrf"
     };
-
-    private Object csrfTokenService;
-
-    private volatile Method cachedIsValidRequestMethod;
-    private volatile Method cachedIsValidMethod;
-    private volatile Class<?> cachedServiceClass;
 
     /** 기본 생성자입니다 (식별자: "CSRF", 실행 순서: 15). */
     public CsrfPolicyValidator() {
@@ -216,23 +209,6 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
             );
         }
 
-        // Granite CSRFTokenService OSGi 서비스가 바인딩되어 있는 경우 검증 위임
-        if (csrfTokenService != null) {
-            try {
-                Boolean isValid = invokeCsrfTokenService(csrfTokenService, request, token);
-                if (isValid != null && !isValid) {
-                    return block(
-                            policy,
-                            SecurityErrorCode.GRANITE_CSRF_INVALID,
-                            "csrf=GRANITE, token=REJECTED_BY_SERVICE",
-                            "Granite CSRFTokenService rejected token for target: " + SecurityUtils.sanitizeForLog(policy.getTarget())
-                    );
-                }
-            } catch (Exception e) {
-                log.debug("Error validating with Granite CSRFTokenService: {}", e.getMessage());
-            }
-        }
-
         // 기본 유효성 검사: 토큰 길이가 비정상적으로 짧은 경우 차단
         if (token.length() < 8) {
             return block(
@@ -244,39 +220,6 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
-    }
-
-    /**
-     * 리플렉션 캐시를 통해 Adobe Granite CSRFTokenService의 토큰 검증 메서드를 호출합니다.
-     */
-    private Boolean invokeCsrfTokenService(final Object service, final HttpServletRequest request, final String token) {
-        if (service == null) return null;
-        Class<?> clazz = service.getClass();
-        if (clazz != cachedServiceClass) {
-            cachedServiceClass = clazz;
-            try {
-                cachedIsValidRequestMethod = clazz.getMethod("isValidRequest", HttpServletRequest.class);
-            } catch (NoSuchMethodException e) {
-                cachedIsValidRequestMethod = null;
-                try {
-                    cachedIsValidMethod = clazz.getMethod("isValid", HttpServletRequest.class, String.class);
-                } catch (Exception ignored) {
-                    cachedIsValidMethod = null;
-                }
-            }
-        }
-
-        try {
-            if (cachedIsValidRequestMethod != null) {
-                return (Boolean) cachedIsValidRequestMethod.invoke(service, request);
-            }
-            if (cachedIsValidMethod != null) {
-                return (Boolean) cachedIsValidMethod.invoke(service, request, token);
-            }
-        } catch (Exception e) {
-            log.debug("Error invoking cached Granite CSRFTokenService method: {}", e.getMessage());
-        }
-        return null;
     }
 
     /**

@@ -30,8 +30,6 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
     public static final String RESP_JSON = "JSON";
     public static final String RESP_JSONP = "JSONP";
     public static final String RESP_HTML = "HTML";
-    public static final String RESP_FILE = "FILE";
-    public static final String RESP_REDIRECT = "REDIRECT";
 
     private static final Pattern VALID_CALLBACK_PATTERN = Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$.]*$");
 

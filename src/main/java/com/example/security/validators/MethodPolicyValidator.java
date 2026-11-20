@@ -7,9 +7,7 @@ import com.example.security.utils.SecurityUtils;
 import org.osgi.service.component.annotations.Component;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -22,11 +20,6 @@ public class MethodPolicyValidator extends AbstractPolicyValidator {
 
     public static final String NAME = "METHOD";
     public static final int ORDER = 20;
-
-    /** 표준 HTTP 메서드 화이트리스트 집합 */
-    public static final Set<String> VALID_HTTP_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"
-    )));
 
     /** 기본 생성자입니다 (식별자: "METHOD", 실행 순서: 20). */
     public MethodPolicyValidator() {
