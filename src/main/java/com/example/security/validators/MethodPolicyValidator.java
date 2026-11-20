@@ -7,6 +7,10 @@ import com.example.security.utils.SecurityUtils;
 import org.osgi.service.component.annotations.Component;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * 요청된 HTTP 메서드가 서블릿 보안 정책에 허용된 메서드(GET, POST 등)인지 검증하는 모듈형 검증기입니다.
@@ -17,8 +21,27 @@ public class MethodPolicyValidator extends AbstractPolicyValidator {
     public static final String NAME = "METHOD";
     public static final int ORDER = 20;
 
+    public static final Set<String> VALID_HTTP_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"
+    )));
+
     public MethodPolicyValidator() {
         super(NAME, ORDER);
+    }
+
+    public static Set<String> getAllowedMethods(final ServletPolicyRule policy) {
+        if (policy == null) {
+            return Collections.emptySet();
+        }
+        return policy.getExtensionUpperSet("methods");
+    }
+
+    public static boolean isMethodAllowed(final ServletPolicyRule policy, final String method) {
+        Set<String> allowed = getAllowedMethods(policy);
+        if (allowed.isEmpty()) {
+            return true;
+        }
+        return method != null && allowed.contains(method.trim().toUpperCase());
     }
 
     @Override
@@ -29,16 +52,17 @@ public class MethodPolicyValidator extends AbstractPolicyValidator {
             return pass();
         }
         String httpMethod = request != null ? request.getMethod() : null;
+        Set<String> allowedMethods = getAllowedMethods(policy);
 
-        if (!policy.isMethodAllowed(httpMethod)) {
-            String blockedConfig = "allowedMethods=" + policy.getMethods() + ", requestMethod=" + httpMethod;
+        if (!isMethodAllowed(policy, httpMethod)) {
+            String blockedConfig = "allowedMethods=" + allowedMethods + ", requestMethod=" + httpMethod;
             return block(
                     policy,
                     SecurityErrorCode.METHOD_NOT_ALLOWED,
                     blockedConfig,
                     "HTTP method [" + httpMethod + "] not allowed for target ["
                             + SecurityUtils.sanitizeForLog(policy.getTarget())
-                            + "] (allowedMethods=" + policy.getMethods() + ")",
+                            + "] (allowedMethods=" + allowedMethods + ")",
                     httpMethod
             );
         }
@@ -49,7 +73,8 @@ public class MethodPolicyValidator extends AbstractPolicyValidator {
     public String describePassedConfig(final HttpServletRequest request,
                                        final ServletPolicyRule policy,
                                        final ServletSecurityConfig rootConfig) {
-        String allowed = (policy == null || policy.getMethods().isEmpty()) ? "ALL" : policy.getMethods().toString();
+        Set<String> allowedMethods = getAllowedMethods(policy);
+        String allowed = allowedMethods.isEmpty() ? "ALL" : allowedMethods.toString();
         String method = request != null ? request.getMethod() : "null";
         return "allowedMethods=" + allowed + ", requestMethod=" + method;
     }

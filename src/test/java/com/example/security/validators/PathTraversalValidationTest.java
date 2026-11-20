@@ -40,7 +40,7 @@ class PathTraversalValidationTest {
 
         Map<String, ParamRule> params = new HashMap<>();
         params.put("filename", fileRule);
-        policy.setParams(params);
+        policy.putExtension("params", params);
         policy.init();
 
         return policy;

@@ -27,6 +27,13 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         super(NAME, ORDER);
     }
 
+    public static Set<String> getAllowedReferrers(final ServletPolicyRule policy) {
+        if (policy == null) {
+            return Collections.emptySet();
+        }
+        return policy.getExtensionLowerSet("allowedReferrers");
+    }
+
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -62,9 +69,6 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return "allowedReferrers=" + effectiveReferrers + ", requestReferer=" + reqReferer;
     }
 
-    /**
-     * 요청의 Referer 또는 Origin 헤더에서 호스트명을 추출하여 허용 도메인 목록(allowedReferrers)과 일치하는지 판별합니다.
-     */
     public boolean isRefererAllowed(final HttpServletRequest request,
                                     final ServletPolicyRule policy,
                                     final ServletSecurityConfig rootConfig) {
@@ -89,13 +93,13 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return false;
     }
 
-    private Set<String> resolveEffectiveReferrers(final ServletPolicyRule policy, final ServletSecurityConfig rootConfig) {
+    public static Set<String> resolveEffectiveReferrers(final ServletPolicyRule policy, final ServletSecurityConfig rootConfig) {
         Set<String> effective = new LinkedHashSet<>();
-        if (rootConfig != null && rootConfig.getDefaultPolicy() != null && rootConfig.getDefaultPolicy().getAllowedReferrers() != null) {
-            effective.addAll(rootConfig.getDefaultPolicy().getAllowedReferrers());
+        if (rootConfig != null && rootConfig.getDefaultPolicy() != null) {
+            effective.addAll(getAllowedReferrers(rootConfig.getDefaultPolicy()));
         }
-        if (policy != null && policy.getAllowedReferrers() != null) {
-            effective.addAll(policy.getAllowedReferrers());
+        if (policy != null) {
+            effective.addAll(getAllowedReferrers(policy));
         }
         if (effective.isEmpty()) {
             effective.add("abc.com");

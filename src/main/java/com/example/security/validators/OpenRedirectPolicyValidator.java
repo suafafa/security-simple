@@ -217,14 +217,13 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
             }
 
             // 2순위: 서블릿 정책 또는 기본 정책(defaultPolicy)의 allowedReferrers를 신뢰 도메인으로 검사
-            if (policy != null && !policy.getAllowedReferrers().isEmpty()) {
-                if (matchesDomainWhitelist(lowerHost, policy.getAllowedReferrers())) {
-                    return true;
-                }
+            Set<String> policyReferrers = RefererPolicyValidator.getAllowedReferrers(policy);
+            if (!policyReferrers.isEmpty() && matchesDomainWhitelist(lowerHost, policyReferrers)) {
+                return true;
             }
-            if (rootConfig != null && rootConfig.getDefaultPolicy() != null
-                    && !rootConfig.getDefaultPolicy().getAllowedReferrers().isEmpty()) {
-                if (matchesDomainWhitelist(lowerHost, rootConfig.getDefaultPolicy().getAllowedReferrers())) {
+            if (rootConfig != null && rootConfig.getDefaultPolicy() != null) {
+                Set<String> defaultReferrers = RefererPolicyValidator.getAllowedReferrers(rootConfig.getDefaultPolicy());
+                if (!defaultReferrers.isEmpty() && matchesDomainWhitelist(lowerHost, defaultReferrers)) {
                     return true;
                 }
             }

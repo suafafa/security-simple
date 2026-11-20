@@ -169,6 +169,71 @@ public class ParamRule {
     // 파라미터 DSL 및 JSON 파싱 유틸리티
     // =========================================================================
 
+    /**
+     * {@link ServletPolicyRule}의 {@code extensions} 맵에서 {@code params} 및 {@code requiredParams}를 추출하여
+     * {@code Map<String, ParamRule>}로 파싱합니다.
+     */
+    public static Map<String, ParamRule> extractParams(final ServletPolicyRule policy) {
+        if (policy == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> ext = policy.getExtensions();
+        if (ext == null || ext.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, ParamRule> consolidated = new LinkedHashMap<>();
+        parseParamEntriesIntoMap(ext, consolidated, "params");
+
+        for (String reqParam : ServletPolicyRule.extractStringList(ext, "requiredParams")) {
+            String key = ServletPolicyRule.stripWrappingQuotes(reqParam).trim();
+            if (StringUtils.isNotBlank(key) && !"true".equalsIgnoreCase(key) && !"false".equalsIgnoreCase(key)) {
+                ParamRule pr = consolidated.computeIfAbsent(key, k -> new ParamRule());
+                pr.setRequired(true);
+                pr.init();
+            }
+        }
+        return Collections.unmodifiableMap(consolidated);
+    }
+
+    /**
+     * 개별 서블릿의 파라미터 규칙과 기본 정책({@code defaultPolicy})의 공통 파라미터 규칙을 병합합니다.
+     */
+    public static Map<String, ParamRule> mergeWithDefault(final Map<String, ParamRule> childParams,
+                                                          final Map<String, ParamRule> parentParams) {
+        if (parentParams == null || parentParams.isEmpty()) {
+            return childParams != null ? childParams : Collections.emptyMap();
+        }
+        if (childParams == null || childParams.isEmpty()) {
+            return parentParams;
+        }
+        Map<String, ParamRule> merged = new LinkedHashMap<>();
+        for (Map.Entry<String, ParamRule> entry : childParams.entrySet()) {
+            String key = entry.getKey();
+            ParamRule childCopy = entry.getValue().copy();
+            ParamRule parentRule = parentParams.get(key);
+            if (parentRule != null) {
+                if (childCopy.getMinLength() == null && parentRule.getMinLength() != null) {
+                    childCopy.setMinLength(parentRule.getMinLength());
+                }
+                if (childCopy.getMaxLength() == null && parentRule.getMaxLength() != null) {
+                    childCopy.setMaxLength(parentRule.getMaxLength());
+                }
+                if (StringUtils.isBlank(childCopy.getPattern()) && StringUtils.isNotBlank(parentRule.getPattern())) {
+                    childCopy.setPattern(parentRule.getPattern());
+                }
+            }
+            childCopy.init();
+            merged.put(key, childCopy);
+        }
+        for (Map.Entry<String, ParamRule> entry : parentParams.entrySet()) {
+            if (!merged.containsKey(entry.getKey())) {
+                merged.put(entry.getKey(), entry.getValue().copy());
+            }
+        }
+        return Collections.unmodifiableMap(merged);
+    }
+
     public static void parseParamEntriesIntoMap(final Map<String, Object> props,
                                                 final Map<String, ParamRule> targetMap,
                                                 final String... keys) {
@@ -270,7 +335,11 @@ public class ParamRule {
             }
             String pName = pe.getKey().toString().trim();
             Object pVal = pe.getValue();
-            if (pVal instanceof String) {
+            if (pVal instanceof ParamRule) {
+                ParamRule copy = ((ParamRule) pVal).copy();
+                copy.init();
+                targetMap.put(pName, copy);
+            } else if (pVal instanceof String) {
                 Map.Entry<String, ParamRule> parsed = parseSimpleParamSpec(pName + ":" + pVal.toString().trim());
                 if (parsed != null) {
                     targetMap.put(pName, parsed.getValue());
@@ -340,9 +409,6 @@ public class ParamRule {
         return null;
     }
 
-    /**
-     * 소괄호 {@code (...)}, 중괄호 {@code {...}}, 대괄호 {@code [...]} 내부의 구분자는 무시하면서 문자열을 분리합니다.
-     */
     public static List<String> splitPreservingParens(final String input, final char delimiter) {
         List<String> tokens = new ArrayList<>();
         if (input == null) {
@@ -385,9 +451,6 @@ public class ParamRule {
         return tokens;
     }
 
-    /**
-     * 간편 DSL 형식의 파라미터 설정 문자열(예: {@code "userId:required:alnum:4..20"})을 파싱합니다.
-     */
     public static Map.Entry<String, ParamRule> parseSimpleParamSpec(final String fullSpec) {
         if (StringUtils.isBlank(fullSpec)) {
             return null;

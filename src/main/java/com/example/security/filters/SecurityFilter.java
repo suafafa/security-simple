@@ -1,6 +1,5 @@
 package com.example.security.filters;
 
-import com.example.security.models.ParamRule;
 import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
 import com.example.security.registry.EndpointPolicyRegistry;
@@ -412,30 +411,18 @@ public class SecurityFilter implements Filter {
                 }
             }
             if (config.default_referrers() != null && config.default_referrers().length > 0) {
-                rule.setAllowedReferrers(Arrays.asList(config.default_referrers()));
+                rule.putExtension("allowedReferrers", Arrays.asList(config.default_referrers()));
             }
             if (config.default_methods() != null && config.default_methods().length > 0) {
-                rule.setMethods(Arrays.asList(config.default_methods()));
+                rule.putExtension("methods", Arrays.asList(config.default_methods()));
             }
-            rule.setAllowUndefinedParams(config.default_allowUndefinedParams());
+            rule.putExtension("allowUndefinedParams", config.default_allowUndefinedParams());
 
-            String[] paramsArray = config.default_params();
-            if (paramsArray != null && paramsArray.length > 0) {
-                Map<String, ParamRule> paramRules = new LinkedHashMap<>();
-                for (String spec : paramsArray) {
-                    if (StringUtils.isNotBlank(spec)) {
-                        Map.Entry<String, ParamRule> entry = ServletPolicyRule.parseSimpleParamSpec(spec);
-                        if (entry != null && StringUtils.isNotBlank(entry.getKey())) {
-                            paramRules.put(entry.getKey().trim(), entry.getValue());
-                        }
-                    }
-                }
-                if (!paramRules.isEmpty()) {
-                    rule.setParams(paramRules);
-                }
+            if (config.default_params() != null && config.default_params().length > 0) {
+                rule.putExtension("params", Arrays.asList(config.default_params()));
             }
         } else {
-            rule.setAllowedReferrers(Collections.singletonList("abc.com"));
+            rule.putExtension("allowedReferrers", Collections.singletonList("abc.com"));
         }
 
         rule.init();

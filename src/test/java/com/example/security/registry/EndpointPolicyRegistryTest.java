@@ -3,6 +3,9 @@ package com.example.security.registry;
 import com.example.security.filters.SecurityFilter;
 import com.example.security.models.ServletPolicyRule;
 import com.example.security.models.ServletSecurityConfig;
+import com.example.security.validators.MethodPolicyValidator;
+import com.example.security.validators.ParamPolicyValidator;
+import com.example.security.validators.RefererPolicyValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -75,22 +78,22 @@ public class EndpointPolicyRegistryTest {
         ServletPolicyRule matched = filterConfig.findMatchingPolicy(request);
         assertNotNull(matched);
         assertEquals("/aemapi/user/contact", matched.getTarget());
-        assertTrue(matched.isMethodAllowed("POST"));
-        assertFalse(matched.isMethodAllowed("GET"));
-        assertTrue(matched.getParams().containsKey("name"));
-        assertTrue(matched.getParams().containsKey("inquiryType"));
-        assertTrue(matched.getParams().get("inquiryType").getCompiledPattern().matcher("billing").matches());
+        assertTrue(MethodPolicyValidator.isMethodAllowed(matched, "POST"));
+        assertFalse(MethodPolicyValidator.isMethodAllowed(matched, "GET"));
+        assertTrue(ParamPolicyValidator.getParams(matched).containsKey("name"));
+        assertTrue(ParamPolicyValidator.getParams(matched).containsKey("inquiryType"));
+        assertTrue(ParamPolicyValidator.getParams(matched).get("inquiryType").getCompiledPattern().matcher("billing").matches());
 
         // 5. core-commerce의 /aemapi/order/inquiry 정책 검증
         when(request.getRequestURI()).thenReturn("/aemapi/order/inquiry");
         ServletPolicyRule orderRule = filterConfig.findMatchingPolicy(request);
         assertNotNull(orderRule);
         assertEquals("/aemapi/order/inquiry", orderRule.getTarget());
-        assertTrue(orderRule.isMethodAllowed("GET"));
-        assertTrue(orderRule.isMethodAllowed("POST"));
-        assertTrue(orderRule.getAllowedReferrers().contains("shop.abc.com"));
-        assertTrue(orderRule.getParams().containsKey("orderId"));
-        assertTrue(orderRule.getParams().containsKey("includeHistory"));
+        assertTrue(MethodPolicyValidator.isMethodAllowed(orderRule, "GET"));
+        assertTrue(MethodPolicyValidator.isMethodAllowed(orderRule, "POST"));
+        assertTrue(RefererPolicyValidator.getAllowedReferrers(orderRule).contains("shop.abc.com"));
+        assertTrue(ParamPolicyValidator.getParams(orderRule).containsKey("orderId"));
+        assertTrue(ParamPolicyValidator.getParams(orderRule).containsKey("includeHistory"));
 
         // SecurityFilter 로그 출처 포맷 확인
         String logSummary = securityFilter.formatAppliedPolicyForLog(matched);
@@ -120,8 +123,8 @@ public class EndpointPolicyRegistryTest {
         registry.bindPolicyConfig(memberConfig, pidProps);
         when(request.getRequestURI()).thenReturn("/aemapi/user/profile");
         ServletPolicyRule initialRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
-        assertTrue(initialRule.isMethodAllowed("GET"));
-        assertFalse(initialRule.isMethodAllowed("POST"));
+        assertTrue(MethodPolicyValidator.isMethodAllowed(initialRule, "GET"));
+        assertFalse(MethodPolicyValidator.isMethodAllowed(initialRule, "POST"));
 
         // 2. 운영 중 .cfg.json 수정: POST 추가 및 신규 엔드포인트(/aemapi/user/avatar) 추가
         String updatedMemberJson = "{\n" +
@@ -153,7 +156,7 @@ public class EndpointPolicyRegistryTest {
 
         // 재기동 없이 SecurityFilter에서 POST 허용 및 신규 엔드포인트 즉시 인식 확인
         ServletPolicyRule updatedRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
-        assertTrue(updatedRule.isMethodAllowed("POST"));
+        assertTrue(MethodPolicyValidator.isMethodAllowed(updatedRule, "POST"));
 
         when(request.getRequestURI()).thenReturn("/aemapi/user/avatar");
         ServletPolicyRule avatarRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
@@ -214,23 +217,23 @@ public class EndpointPolicyRegistryTest {
         when(request.getRequestURI()).thenReturn("/aemapi/test/dsl");
         ServletPolicyRule dslRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertNotNull(dslRule);
-        assertTrue(dslRule.getParams().get("userId").isRequired());
-        assertTrue(dslRule.getParams().get("userName").isRequired());
-        assertTrue(dslRule.getParams().get("email").isRequired());
-        assertTrue(dslRule.getParams().get("phone").isRequired());
-        assertTrue(dslRule.getParams().get("code").isRequired());
-        assertEquals("^[A-Z0-9]{4,10}$", dslRule.getParams().get("code").getPattern());
-        assertTrue(dslRule.getParams().get("id").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(dslRule).get("userId").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(dslRule).get("userName").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(dslRule).get("email").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(dslRule).get("phone").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(dslRule).get("code").isRequired());
+        assertEquals("^[A-Z0-9]{4,10}$", ParamPolicyValidator.getParams(dslRule).get("code").getPattern());
+        assertTrue(ParamPolicyValidator.getParams(dslRule).get("id").isRequired());
 
         // 2. /aemapi/test/json-array 의 JSON 객체 배열 및 requiredParams 등록 상태 확인 (대소문자 구분)
         when(request.getRequestURI()).thenReturn("/aemapi/test/json-array");
         ServletPolicyRule jsonArrayRule = securityFilter.getServletSecurityConfig().findMatchingPolicy(request);
         assertNotNull(jsonArrayRule);
-        assertTrue(jsonArrayRule.getParams().get("accountNo").isRequired());
-        assertEquals(Integer.valueOf(10), jsonArrayRule.getParams().get("accountNo").getMinLength());
-        assertEquals(Integer.valueOf(14), jsonArrayRule.getParams().get("accountNo").getMaxLength());
-        assertFalse(jsonArrayRule.getParams().get("memo").isRequired());
-        assertTrue(jsonArrayRule.getParams().get("txToken").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(jsonArrayRule).get("accountNo").isRequired());
+        assertEquals(Integer.valueOf(10), ParamPolicyValidator.getParams(jsonArrayRule).get("accountNo").getMinLength());
+        assertEquals(Integer.valueOf(14), ParamPolicyValidator.getParams(jsonArrayRule).get("accountNo").getMaxLength());
+        assertFalse(ParamPolicyValidator.getParams(jsonArrayRule).get("memo").isRequired());
+        assertTrue(ParamPolicyValidator.getParams(jsonArrayRule).get("txToken").isRequired());
 
         // 3. ParamPolicyValidator 실제 필수 파라미터 누락 차단(SEC-40001) 및 대소문자 구분 검증
         com.example.security.validators.ParamPolicyValidator validator = new com.example.security.validators.ParamPolicyValidator();

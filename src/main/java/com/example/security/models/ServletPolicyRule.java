@@ -23,20 +23,18 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 특정 타겟(URL 경로 또는 Sling resourceType)에 대한 보안 정책 규칙 모델입니다.
+ * 특정 타겟(URL 경로 또는 Sling resourceType)에 대한 보안 정책 규칙 컨테이너 모델입니다.
+ * <p>
+ * 특정 {@code PolicyValidator}에 종속된 필드를 가지지 않으며, 공통 라우팅/제어 메타데이터({@code target},
+ * {@code enabled}, {@code mode})와 각 Validator가 자유롭게 조회하는 {@code extensions} 맵만 관리합니다.
  */
 public class ServletPolicyRule {
 
     private static final Gson GSON = new Gson();
     private static final Type MAP_TYPE = new TypeToken<Map<String, Object>>() {}.getType();
 
-    public static final Set<String> VALID_HTTP_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"
-    )));
-
     private static final Set<String> BUILT_IN_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "target", "enabled", "mode", "methods", "allowedreferrers",
-            "allowundefinedparams", "params", "requiredparams", "extensions"
+            "target", "enabled", "mode", "extensions"
     )));
 
     @SerializedName("target")
@@ -48,25 +46,9 @@ public class ServletPolicyRule {
     @SerializedName("mode")
     private String mode;
 
-    @SerializedName("methods")
-    private List<String> methods;
-
-    @SerializedName("allowedReferrers")
-    private List<String> allowedReferrers;
-
-    @SerializedName("allowUndefinedParams")
-    private Boolean allowUndefinedParams;
-
-    @SerializedName("params")
-    private Map<String, ParamRule> params;
-
     @SerializedName("extensions")
     private Map<String, Object> extensions;
 
-    // 런타임 고속 조회용 캐시 필드
-    private transient Set<String> upperMethods = Collections.emptySet();
-    private transient Set<String> lowerAllowedReferrers = Collections.emptySet();
-    private transient Map<String, ParamRule> lowerParams = Collections.emptyMap();
     private transient Pattern compiledTargetPattern;
 
     public void init() {
@@ -75,44 +57,6 @@ public class ServletPolicyRule {
                 this.compiledTargetPattern = Pattern.compile(target.trim());
             } catch (Exception ignored) {
             }
-        }
-
-        if (methods != null && !methods.isEmpty()) {
-            Set<String> set = new LinkedHashSet<>();
-            for (String m : methods) {
-                if (StringUtils.isNotBlank(m)) {
-                    set.add(m.trim().toUpperCase());
-                }
-            }
-            this.upperMethods = Collections.unmodifiableSet(set);
-        } else {
-            this.upperMethods = Collections.emptySet();
-        }
-
-        if (allowedReferrers != null && !allowedReferrers.isEmpty()) {
-            Set<String> set = new LinkedHashSet<>();
-            for (String ref : allowedReferrers) {
-                if (StringUtils.isNotBlank(ref)) {
-                    set.add(ref.trim().toLowerCase());
-                }
-            }
-            this.lowerAllowedReferrers = Collections.unmodifiableSet(set);
-        } else {
-            this.lowerAllowedReferrers = Collections.emptySet();
-        }
-
-        if (params != null && !params.isEmpty()) {
-            Map<String, ParamRule> map = new LinkedHashMap<>();
-            for (Map.Entry<String, ParamRule> entry : params.entrySet()) {
-                if (StringUtils.isNotBlank(entry.getKey()) && entry.getValue() != null) {
-                    ParamRule rule = entry.getValue();
-                    rule.init();
-                    map.put(entry.getKey().trim(), rule);
-                }
-            }
-            this.lowerParams = Collections.unmodifiableMap(map);
-        } else {
-            this.lowerParams = Collections.emptyMap();
         }
 
         setMode(this.mode);
@@ -130,28 +74,11 @@ public class ServletPolicyRule {
 
     public void validate(final List<String> errors) {
         String id = getTargetIdentifier();
-
-        if (methods != null) {
-            for (String m : methods) {
-                if (StringUtils.isNotBlank(m) && !VALID_HTTP_METHODS.contains(m.trim().toUpperCase())) {
-                    errors.add("Target '" + id + "': Unsupported HTTP method '" + m + "'. Allowed: " + VALID_HTTP_METHODS);
-                }
-            }
-        }
-
         if (StringUtils.isNotBlank(target) && (target.contains("*") || target.contains("^") || target.contains("$"))) {
             try {
                 Pattern.compile(target.trim());
             } catch (Exception e) {
                 errors.add("Target '" + id + "': Invalid regex pattern for target: '" + target + "' (" + e.getMessage() + ")");
-            }
-        }
-
-        if (params != null) {
-            for (Map.Entry<String, ParamRule> entry : params.entrySet()) {
-                if (entry.getValue() != null) {
-                    entry.getValue().validate(entry.getKey(), id, errors);
-                }
             }
         }
     }
@@ -211,60 +138,6 @@ public class ServletPolicyRule {
         this.enabled = enabled;
     }
 
-    public Set<String> getMethods() {
-        return upperMethods != null ? upperMethods : Collections.emptySet();
-    }
-
-    public void setMethods(List<String> methods) {
-        this.methods = methods;
-    }
-
-    public boolean isMethodAllowed(final String method) {
-        if (upperMethods == null || upperMethods.isEmpty()) {
-            return true;
-        }
-        return method != null && upperMethods.contains(method.trim().toUpperCase());
-    }
-
-    public Map<String, ParamRule> getParams() {
-        if (lowerParams != null && !lowerParams.isEmpty()) {
-            return lowerParams;
-        }
-        return params != null ? params : Collections.emptyMap();
-    }
-
-    public void setParams(Map<String, ParamRule> params) {
-        this.params = params;
-        if (params == null || params.isEmpty()) {
-            this.lowerParams = Collections.emptyMap();
-        } else {
-            Map<String, ParamRule> tempParams = new LinkedHashMap<>(params.size());
-            for (Map.Entry<String, ParamRule> entry : params.entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null) {
-                    entry.getValue().init();
-                    tempParams.put(entry.getKey().trim(), entry.getValue());
-                }
-            }
-            this.lowerParams = Collections.unmodifiableMap(tempParams);
-        }
-    }
-
-    public boolean isAllowUndefinedParams() {
-        return allowUndefinedParams != null && allowUndefinedParams;
-    }
-
-    public void setAllowUndefinedParams(Boolean allowUndefinedParams) {
-        this.allowUndefinedParams = allowUndefinedParams;
-    }
-
-    public Set<String> getAllowedReferrers() {
-        return lowerAllowedReferrers != null ? lowerAllowedReferrers : Collections.emptySet();
-    }
-
-    public void setAllowedReferrers(List<String> allowedReferrers) {
-        this.allowedReferrers = allowedReferrers;
-    }
-
     public String getMode() {
         if (StringUtils.isBlank(mode)) {
             return null;
@@ -298,6 +171,19 @@ public class ServletPolicyRule {
         this.extensions.put(key.trim(), value);
     }
 
+    public Object getExtension(String... keys) {
+        if (extensions == null || extensions.isEmpty() || keys == null) {
+            return null;
+        }
+        for (String k : keys) {
+            Object val = findValueIgnoreCase(extensions, k);
+            if (val != null) {
+                return val;
+            }
+        }
+        return null;
+    }
+
     public List<String> getExtensionStringList(String... keys) {
         if (extensions == null || extensions.isEmpty() || keys == null) {
             return Collections.emptyList();
@@ -314,6 +200,20 @@ public class ServletPolicyRule {
         for (String item : list) {
             if (StringUtils.isNotBlank(item)) {
                 set.add(item.trim().toLowerCase());
+            }
+        }
+        return Collections.unmodifiableSet(set);
+    }
+
+    public Set<String> getExtensionUpperSet(String... keys) {
+        List<String> list = getExtensionStringList(keys);
+        if (list.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> set = new LinkedHashSet<>();
+        for (String item : list) {
+            if (StringUtils.isNotBlank(item)) {
+                set.add(item.trim().toUpperCase());
             }
         }
         return Collections.unmodifiableSet(set);
@@ -340,58 +240,6 @@ public class ServletPolicyRule {
             this.mode = parent.mode;
         }
 
-        if ((this.methods == null || this.methods.isEmpty()) && parent.methods != null && !parent.methods.isEmpty()) {
-            this.methods = new ArrayList<>(parent.methods);
-        }
-
-        if (parent.allowedReferrers != null && !parent.allowedReferrers.isEmpty()) {
-            Set<String> merged = new LinkedHashSet<>();
-            if (this.allowedReferrers != null) {
-                merged.addAll(this.allowedReferrers);
-            }
-            merged.addAll(parent.allowedReferrers);
-            this.allowedReferrers = new ArrayList<>(merged);
-        }
-
-        if (this.allowUndefinedParams == null && parent.allowUndefinedParams != null) {
-            this.allowUndefinedParams = parent.allowUndefinedParams;
-        }
-
-        if (parent.params != null && !parent.params.isEmpty()) {
-            Map<String, ParamRule> merged = new LinkedHashMap<>();
-            if (this.params != null && !this.params.isEmpty()) {
-                for (Map.Entry<String, ParamRule> entry : this.params.entrySet()) {
-                    if (entry.getKey() != null && entry.getValue() != null) {
-                        String key = entry.getKey().trim();
-                        ParamRule childCopy = entry.getValue().copy();
-                        ParamRule parentRule = parent.getParams().get(key);
-                        if (parentRule != null) {
-                            if (childCopy.getMinLength() == null && parentRule.getMinLength() != null) {
-                                childCopy.setMinLength(parentRule.getMinLength());
-                            }
-                            if (childCopy.getMaxLength() == null && parentRule.getMaxLength() != null) {
-                                childCopy.setMaxLength(parentRule.getMaxLength());
-                            }
-                            if (StringUtils.isBlank(childCopy.getPattern()) && StringUtils.isNotBlank(parentRule.getPattern())) {
-                                childCopy.setPattern(parentRule.getPattern());
-                            }
-                        }
-                        childCopy.init();
-                        merged.put(key, childCopy);
-                    }
-                }
-            }
-            for (Map.Entry<String, ParamRule> entry : parent.params.entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null) {
-                    String key = entry.getKey().trim();
-                    if (!merged.containsKey(key)) {
-                        merged.put(key, entry.getValue().copy());
-                    }
-                }
-            }
-            this.params = merged;
-        }
-
         if (parent.extensions != null && !parent.extensions.isEmpty()) {
             if (this.extensions == null) {
                 this.extensions = new LinkedHashMap<>(parent.extensions);
@@ -412,21 +260,7 @@ public class ServletPolicyRule {
         this.target = other.target;
         this.enabled = other.enabled;
         this.mode = other.mode;
-        this.methods = other.methods != null ? new ArrayList<>(other.methods) : null;
-        this.allowedReferrers = other.allowedReferrers != null ? new ArrayList<>(other.allowedReferrers) : null;
-        this.allowUndefinedParams = other.allowUndefinedParams;
         this.extensions = other.extensions != null ? new LinkedHashMap<>(other.extensions) : null;
-        if (other.params != null) {
-            Map<String, ParamRule> copiedParams = new LinkedHashMap<>(other.params.size());
-            for (Map.Entry<String, ParamRule> entry : other.params.entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null) {
-                    copiedParams.put(entry.getKey().trim(), entry.getValue().copy());
-                }
-            }
-            this.params = copiedParams;
-        } else {
-            this.params = null;
-        }
     }
 
     private static ServletPolicyRule parseRuleForTarget(final Map<String, Object> props) {
@@ -435,37 +269,6 @@ public class ServletPolicyRule {
         Boolean enabledVal = extractBoolean(props, "enabled");
         if (enabledVal != null) {
             rule.setEnabled(enabledVal);
-        }
-
-        List<String> methods = extractStringList(props, "methods");
-        if (!methods.isEmpty()) {
-            rule.setMethods(methods);
-        }
-
-        List<String> allowedReferrers = extractStringList(props, "allowedReferrers");
-        if (!allowedReferrers.isEmpty()) {
-            rule.setAllowedReferrers(allowedReferrers);
-        }
-
-        Boolean allowUndef = extractBoolean(props, "allowUndefinedParams");
-        if (allowUndef != null) {
-            rule.setAllowUndefinedParams(allowUndef);
-        }
-
-        Map<String, ParamRule> consolidatedParams = new LinkedHashMap<>();
-        ParamRule.parseParamEntriesIntoMap(props, consolidatedParams, "params");
-
-        for (String reqParam : extractStringList(props, "requiredParams")) {
-            String key = stripWrappingQuotes(reqParam).trim();
-            if (StringUtils.isNotBlank(key) && !"true".equalsIgnoreCase(key) && !"false".equalsIgnoreCase(key)) {
-                ParamRule pr = consolidatedParams.computeIfAbsent(key, k -> new ParamRule());
-                pr.setRequired(true);
-                pr.init();
-            }
-        }
-
-        if (!consolidatedParams.isEmpty()) {
-            rule.setParams(consolidatedParams);
         }
 
         List<String> modes = extractStringList(props, "mode");
@@ -558,18 +361,6 @@ public class ServletPolicyRule {
         return null;
     }
 
-    public static List<String> splitPreservingParens(final String input, final char delimiter) {
-        return ParamRule.splitPreservingParens(input, delimiter);
-    }
-
-    public static Map.Entry<String, ParamRule> parseSimpleParamSpec(final String fullSpec) {
-        return ParamRule.parseSimpleParamSpec(fullSpec);
-    }
-
-    // =========================================================================
-    // 공통 프로퍼티 추출 헬퍼 (ParamRule과 공유)
-    // =========================================================================
-
     static boolean containsKeyIgnoreCase(final Map<String, ?> map, final String key) {
         if (map == null || key == null) {
             return false;
@@ -577,21 +368,15 @@ public class ServletPolicyRule {
         if (map.containsKey(key)) {
             return true;
         }
-        boolean isRunModeKey = isRunModeAlias(key);
         for (String k : map.keySet()) {
-            if (k != null && (k.equalsIgnoreCase(key) || (isRunModeKey && isRunModeAlias(k)))) {
+            if (k != null && k.equalsIgnoreCase(key)) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean isRunModeAlias(final String key) {
-        return "runmodes".equalsIgnoreCase(key) || "runmode".equalsIgnoreCase(key)
-                || "allowedrunmodes".equalsIgnoreCase(key) || "allowedrunmode".equalsIgnoreCase(key);
-    }
-
-    static Object findValueIgnoreCase(final Map<String, Object> props, final String key) {
+    public static Object findValueIgnoreCase(final Map<String, Object> props, final String key) {
         if (props == null || key == null) {
             return null;
         }
@@ -606,7 +391,7 @@ public class ServletPolicyRule {
         return null;
     }
 
-    static List<String> extractStringList(final Map<String, Object> props, final String... keys) {
+    public static List<String> extractStringList(final Map<String, Object> props, final String... keys) {
         for (String k : keys) {
             Object val = findValueIgnoreCase(props, k);
             if (val == null) {
@@ -647,7 +432,7 @@ public class ServletPolicyRule {
         return Collections.emptyList();
     }
 
-    static Boolean extractBoolean(final Map<String, Object> props, final String... keys) {
+    public static Boolean extractBoolean(final Map<String, Object> props, final String... keys) {
         for (String k : keys) {
             Object val = findValueIgnoreCase(props, k);
             if (val instanceof Boolean) {
@@ -659,7 +444,7 @@ public class ServletPolicyRule {
         return null;
     }
 
-    static String stripWrappingQuotes(final String input) {
+    public static String stripWrappingQuotes(final String input) {
         if (input == null) {
             return "";
         }
@@ -673,29 +458,9 @@ public class ServletPolicyRule {
     public String toPolicySummaryString() {
         StringBuilder sb = new StringBuilder();
         sb.append("target=").append(StringUtils.defaultIfBlank(target, "UNKNOWN"));
+        sb.append(", enabled=").append(isEnabled());
         if (getMode() != null) {
             sb.append(", mode=").append(getMode());
-        }
-        sb.append(", methods=").append(getMethods().isEmpty() ? "ALL" : getMethods());
-        if (!getAllowedReferrers().isEmpty()) {
-            sb.append(", allowedReferrers=").append(getAllowedReferrers());
-        }
-        sb.append(", allowUndefinedParams=").append(isAllowUndefinedParams());
-
-        Map<String, ParamRule> pMap = getParams();
-        if (pMap != null && !pMap.isEmpty()) {
-            sb.append(", params={");
-            boolean first = true;
-            for (Map.Entry<String, ParamRule> entry : pMap.entrySet()) {
-                if (!first) sb.append(", ");
-                first = false;
-                sb.append(entry.getKey()).append("=").append(
-                        entry.getValue() != null ? entry.getValue().toSummaryString() : "{}"
-                );
-            }
-            sb.append("}");
-        } else {
-            sb.append(", params={}");
         }
         if (extensions != null && !extensions.isEmpty()) {
             sb.append(", extensions=").append(extensions);

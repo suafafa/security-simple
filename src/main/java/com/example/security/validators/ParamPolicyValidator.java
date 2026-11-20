@@ -13,12 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * 요청 파라미터에 대한 다중 계층 보안 검증을 수행하는 모듈형 검증기입니다:
- * - 정의되지 않은 파라미터(allowUndefinedParams) 허용 여부 검사 (기본값: false 차단)
- * - 필수 파라미터(required) 존재 여부 검사
- * - 경로 조작(Path Traversal, CWE-22) 공격 탐지 및 차단
- * - 최소/최대 글자 수(minLength, maxLength) 제한 검사
- * - 정규식 패턴(pattern) 일치 검사
+ * 요청 파라미터에 대한 다중 계층 보안 검증을 수행하는 모듈형 검증기입니다.
  */
 @Component(service = PolicyValidator.class, immediate = true)
 public class ParamPolicyValidator extends AbstractPolicyValidator {
@@ -30,6 +25,28 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         super(NAME, ORDER);
     }
 
+    public static boolean isAllowUndefinedParams(final ServletPolicyRule policy) {
+        if (policy == null) {
+            return false;
+        }
+        Boolean val = policy.getExtensionBoolean("allowUndefinedParams");
+        return val != null && val;
+    }
+
+    public static Map<String, ParamRule> getParams(final ServletPolicyRule policy) {
+        return ParamRule.extractParams(policy);
+    }
+
+    public static Map<String, ParamRule> resolveParams(final ServletPolicyRule policy,
+                                                       final ServletSecurityConfig rootConfig) {
+        Map<String, ParamRule> childParams = ParamRule.extractParams(policy);
+        if (rootConfig != null && rootConfig.getDefaultPolicy() != null && rootConfig.getDefaultPolicy() != policy) {
+            Map<String, ParamRule> defaultParams = ParamRule.extractParams(rootConfig.getDefaultPolicy());
+            return ParamRule.mergeWithDefault(childParams, defaultParams);
+        }
+        return childParams;
+    }
+
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -37,8 +54,9 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         if (policy == null) {
             return pass();
         }
-        Map<String, ParamRule> configuredParams = policy.getParams();
+        Map<String, ParamRule> configuredParams = resolveParams(policy, rootConfig);
         Map<String, String[]> parameterMap = request != null ? request.getParameterMap() : null;
+        boolean allowUndefined = isAllowUndefinedParams(policy);
 
         if ((configuredParams == null || configuredParams.isEmpty())
                 && (parameterMap == null || parameterMap.isEmpty())) {
@@ -77,7 +95,7 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
 
                 // 2-1. 서블릿 정책에 정의되지 않은 파라미터 처리
                 if (rule == null) {
-                    if (!policy.isAllowUndefinedParams()) {
+                    if (!allowUndefined) {
                         String blockedConfig = "allowUndefinedParams=false, definedParams="
                                 + (configuredParams != null ? configuredParams.keySet() : "[]")
                                 + ", undefinedParam=" + SecurityUtils.sanitizeForLog(paramName);
@@ -191,8 +209,8 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
             return "NONE";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("allowUndefinedParams=").append(policy.isAllowUndefinedParams());
-        Map<String, ParamRule> configuredParams = policy.getParams();
+        sb.append("allowUndefinedParams=").append(isAllowUndefinedParams(policy));
+        Map<String, ParamRule> configuredParams = resolveParams(policy, rootConfig);
         if (configuredParams != null && !configuredParams.isEmpty()) {
             sb.append(", params={");
             boolean first = true;
@@ -208,9 +226,6 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         return sb.toString();
     }
 
-    /**
-     * CWE-22: 파라미터 값에 경로 조작(Path Traversal / Directory Traversal) 공격 패턴이 포함되어 있는지 검사합니다.
-     */
     public static boolean isPathTraversalAttack(final String value) {
         if (StringUtils.isBlank(value)) {
             return false;
