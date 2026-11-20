@@ -35,14 +35,8 @@ public class ServletPolicyRule {
     )));
 
     private static final Set<String> BUILT_IN_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "target", "targets", "path", "paths", "sling.servlet.paths", "resourcetype", "resourcetypes",
-            "enabled", "methods", "allowedmethods", "security.methods",
-            "allowedreferrers", "referrers", "security.referrers",
-            "allowundefinedparams", "allow_undefined_params", "security.allowundefinedparams",
-            "params", "parameters", "paramrules", "security.params",
-            "requiredparams", "required_params", "security.requiredparams", "required",
-            "mode", "policymode", "securitymode",
-            "extensions", "options", "customoptions"
+            "target", "enabled", "mode", "methods", "allowedreferrers",
+            "allowundefinedparams", "params", "requiredparams", "extensions"
     )));
 
     @SerializedName("target")
@@ -51,7 +45,7 @@ public class ServletPolicyRule {
     @SerializedName("enabled")
     private Boolean enabled = true;
 
-    @SerializedName(value = "mode", alternate = {"policyMode", "securityMode"})
+    @SerializedName("mode")
     private String mode;
 
     @SerializedName("methods")
@@ -66,7 +60,7 @@ public class ServletPolicyRule {
     @SerializedName("params")
     private Map<String, ParamRule> params;
 
-    @SerializedName(value = "extensions", alternate = {"options", "customOptions"})
+    @SerializedName("extensions")
     private Map<String, Object> extensions;
 
     // 런타임 고속 조회용 캐시 필드
@@ -443,25 +437,25 @@ public class ServletPolicyRule {
             rule.setEnabled(enabledVal);
         }
 
-        List<String> methods = extractStringList(props, "methods", "allowedMethods", "security.methods");
+        List<String> methods = extractStringList(props, "methods");
         if (!methods.isEmpty()) {
             rule.setMethods(methods);
         }
 
-        List<String> allowedReferrers = extractStringList(props, "allowedReferrers", "referrers", "security.referrers");
+        List<String> allowedReferrers = extractStringList(props, "allowedReferrers");
         if (!allowedReferrers.isEmpty()) {
             rule.setAllowedReferrers(allowedReferrers);
         }
 
-        Boolean allowUndef = extractBoolean(props, "allowUndefinedParams", "allow_undefined_params", "security.allowUndefinedParams");
+        Boolean allowUndef = extractBoolean(props, "allowUndefinedParams");
         if (allowUndef != null) {
             rule.setAllowUndefinedParams(allowUndef);
         }
 
         Map<String, ParamRule> consolidatedParams = new LinkedHashMap<>();
-        ParamRule.parseParamEntriesIntoMap(props, consolidatedParams, "params", "parameters", "paramRules", "security.params");
+        ParamRule.parseParamEntriesIntoMap(props, consolidatedParams, "params");
 
-        for (String reqParam : extractStringList(props, "requiredParams", "required_params", "security.requiredParams", "required")) {
+        for (String reqParam : extractStringList(props, "requiredParams")) {
             String key = stripWrappingQuotes(reqParam).trim();
             if (StringUtils.isNotBlank(key) && !"true".equalsIgnoreCase(key) && !"false".equalsIgnoreCase(key)) {
                 ParamRule pr = consolidatedParams.computeIfAbsent(key, k -> new ParamRule());
@@ -474,19 +468,17 @@ public class ServletPolicyRule {
             rule.setParams(consolidatedParams);
         }
 
-        List<String> modes = extractStringList(props, "mode", "policyMode", "securityMode");
+        List<String> modes = extractStringList(props, "mode");
         if (!modes.isEmpty()) {
             rule.setMode(modes.get(0));
         }
 
         Map<String, Object> ext = new LinkedHashMap<>();
-        for (String extContainerKey : new String[]{"extensions", "options", "customOptions"}) {
-            Object rawExt = props.get(extContainerKey);
-            if (rawExt instanceof Map<?, ?>) {
-                for (Map.Entry<?, ?> e : ((Map<?, ?>) rawExt).entrySet()) {
-                    if (e.getKey() != null && e.getValue() != null) {
-                        ext.put(e.getKey().toString().trim(), e.getValue());
-                    }
+        Object rawExt = findValueIgnoreCase(props, "extensions");
+        if (rawExt instanceof Map<?, ?>) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) rawExt).entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    ext.put(e.getKey().toString().trim(), e.getValue());
                 }
             }
         }
@@ -516,7 +508,7 @@ public class ServletPolicyRule {
             return Collections.emptyList();
         }
 
-        List<String> targets = extractStringList(map, "target", "targets", "path", "paths", "sling.servlet.paths", "resourceType", "resourceTypes");
+        List<String> targets = extractStringList(map, "target");
         if (targets.isEmpty()) {
             return Collections.emptyList();
         }
