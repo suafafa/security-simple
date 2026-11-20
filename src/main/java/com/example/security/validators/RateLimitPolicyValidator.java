@@ -50,6 +50,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         private final Deque<Long> timestamps = new ArrayDeque<>();
         private long lastAccessTime = System.currentTimeMillis();
 
+        /**
+         * 슬라이딩 윈도우 내에 요청 허용 한도가 남아있는지 확인하고, 허용 시 현재 타임스탬프를 기록합니다.
+         */
         synchronized boolean tryAcquire(final int maxRequests, final long windowMillis, final long now) {
             this.lastAccessTime = now;
             long cutoff = now - windowMillis;
@@ -67,6 +70,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
             return true;
         }
 
+        /**
+         * 다음 요청이 허용될 때까지 남은 대기 시간(초)을 계산합니다.
+         */
         synchronized long getSecondsUntilNextAvailable(final long windowMillis, final long now) {
             if (timestamps.isEmpty()) {
                 return 1;
@@ -76,6 +82,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
             return waitMillis > 0 ? (waitMillis / 1000 + 1) : 1;
         }
 
+        /**
+         * 이 버킷이 만료 시간({@code BUCKET_EXPIRY_MILLIS}) 동안 미사용 상태인지 확인합니다.
+         */
         synchronized boolean isExpired(final long now) {
             return (now - lastAccessTime) > BUCKET_EXPIRY_MILLIS;
         }
@@ -85,10 +94,14 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
     private final AtomicLong lastCleanupTime = new AtomicLong(0L);
     private final AtomicBoolean isCleaningUp = new AtomicBoolean(false);
 
+    /** 기본 생성자입니다 (식별자: "RATE_LIMIT", 실행 순서: 8). */
     public RateLimitPolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * 클라이언트 IP 또는 사용자 기준의 요청 빈도가 설정된 임계치({@code rateLimit}/{@code rateLimitWindow})를 초과하는지 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -133,6 +146,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 서블릿 정책에서 윈도우당 최대 허용 요청 수({@code rateLimit})를 추출합니다.
+     */
     private Integer resolveRateLimit(final ServletPolicyRule policy) {
         if (policy == null) {
             return null;
@@ -149,6 +165,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         }
     }
 
+    /**
+     * 서블릿 정책에서 Rate Limit 측정 윈도우 시간(초, 기본값 60초)을 추출합니다.
+     */
     private int resolveRateLimitWindow(final ServletPolicyRule policy) {
         if (policy != null) {
             String raw = policy.getExtensionString(WINDOW_KEYS);
@@ -165,6 +184,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         return 60;
     }
 
+    /**
+     * 서블릿 정책에서 버킷 구분 기준 키 모드({@code IP}, {@code IP_TARGET}, {@code USER})를 추출합니다.
+     */
     private String resolveRateLimitKey(final ServletPolicyRule policy) {
         if (policy != null) {
             String raw = policy.getExtensionString(KEY_MODE_KEYS);
@@ -211,6 +233,9 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         }
     }
 
+    /**
+     * 만료 시간이 지난 미사용 버킷들을 맵에서 제거합니다.
+     */
     private void cleanupExpiredBuckets(final long now) {
         for (Map.Entry<String, RequestBucket> entry : bucketMap.entrySet()) {
             if (entry.getValue().isExpired(now)) {

@@ -27,6 +27,9 @@ public class UserContactServlet extends SlingAllMethodsServlet {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * 보안 필터 검증을 통과한 고객 문의 POST 요청을 처리하고 JSON 응답을 반환합니다.
+     */
     @Override
     protected void doPost(final SlingHttpServletRequest request, final SlingHttpServletResponse response)
             throws ServletException, IOException {

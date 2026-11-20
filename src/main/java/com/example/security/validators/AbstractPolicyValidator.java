@@ -42,16 +42,21 @@ public abstract class AbstractPolicyValidator implements PolicyValidator {
         this.order = order;
     }
 
+    /** 검증기 고유 식별자 이름을 반환합니다. */
     @Override
     public final String getName() {
         return name;
     }
 
+    /** 필터 체인 내 검증기 실행 우선순위(오름차순)를 반환합니다. */
     @Override
     public int getOrder() {
         return order;
     }
 
+    /**
+     * 하위 클래스의 {@link #doValidate}를 호출하여 요청이 보안 정책을 준수하는지 검증합니다.
+     */
     @Override
     public final ValidationResult validate(final HttpServletRequest request,
                                            final ServletPolicyRule policy,

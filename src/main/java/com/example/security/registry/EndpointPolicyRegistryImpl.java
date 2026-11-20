@@ -183,6 +183,9 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         notifyChangeListeners();
     }
 
+    /**
+     * 등록된 모든 변경 리스너(예: {@code SecurityFilter})에게 정책 캐시 갱신을 통지합니다.
+     */
     private void notifyChangeListeners() {
         for (Runnable listener : changeListeners) {
             try {
@@ -193,6 +196,9 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         }
     }
 
+    /**
+     * 바인딩된 {@link EndpointPolicyConfig} 인스턴스를 식별하기 위한 고유 키를 생성합니다.
+     */
     private static String resolveConfigKey(final EndpointPolicyConfig config, final Map<String, Object> properties) {
         if (properties != null) {
             for (String k : new String[]{"service.pid", "component.name", "service.id"}) {
@@ -211,6 +217,9 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         return "instance:" + System.identityHashCode(config);
     }
 
+    /**
+     * OSGi 컴포넌트 비활성화 시 모든 바인딩 캐시와 리스너 목록을 초기화합니다.
+     */
     @Deactivate
     protected void deactivate() {
         configInstanceKeys.clear();
@@ -223,11 +232,17 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         LOG.info("EndpointPolicyRegistryImpl deactivated.");
     }
 
+    /**
+     * 현재 활성화된 모든 {@code .cfg.json} 번들 설정으로부터 수집된 전체 서블릿 보안 정책 목록을 반환합니다.
+     */
     @Override
     public List<ServletPolicyRule> getAllPolicies() {
         return activePolicies;
     }
 
+    /**
+     * 특정 타겟 경로 또는 resourceType에 해당하는 보안 정책 규칙을 조회합니다.
+     */
     @Override
     public ServletPolicyRule getPolicy(final String target) {
         if (StringUtils.isBlank(target)) {
@@ -246,6 +261,9 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         return null;
     }
 
+    /**
+     * 특정 타겟 정책이 어느 번들({@code .cfg.json})에서 등록되었는지 출처 식별자를 반환합니다.
+     */
     @Override
     public String getPolicySource(final String target) {
         if (StringUtils.isBlank(target)) {
@@ -264,11 +282,17 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         return null;
     }
 
+    /**
+     * 번들 식별자({@code bundle.id})별로 그룹화된 서블릿 보안 정책 맵을 반환합니다.
+     */
     @Override
     public Map<String, List<ServletPolicyRule>> getPoliciesByBundle() {
         return policiesByBundle;
     }
 
+    /**
+     * {@code .cfg.json} 설정 변경 시 호출될 리스너를 등록합니다.
+     */
     @Override
     public void addChangeListener(final Runnable listener) {
         if (listener != null && !changeListeners.contains(listener)) {
@@ -276,6 +300,9 @@ public class EndpointPolicyRegistryImpl implements EndpointPolicyRegistry {
         }
     }
 
+    /**
+     * 등록된 변경 리스너를 해제합니다.
+     */
     @Override
     public void removeChangeListener(final Runnable listener) {
         if (listener != null) {

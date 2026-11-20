@@ -48,10 +48,14 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
             "redirectUrl"
     };
 
+    /** 기본 생성자입니다 (식별자: "OPEN_REDIRECT", 실행 순서: 35). */
     public OpenRedirectPolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * 요청 내 리다이렉트 대상 URL 파라미터 및 정적 리다이렉트 설정이 화이트리스트 도메인 및 상대 경로 정책을 준수하는지 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -114,6 +118,9 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 내부 상대 경로 리다이렉트 허용 여부({@code allowRelativeRedirect})를 조회합니다 (기본값: true).
+     */
     public static boolean isAllowRelativeRedirect(final ServletPolicyRule policy) {
         if (policy == null) {
             return true;
@@ -122,6 +129,9 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
         return val == null || val;
     }
 
+    /**
+     * 서블릿 정책에서 허용된 외부 리다이렉트 도메인 집합({@code allowedRedirectDomains})을 조회합니다.
+     */
     public static Set<String> resolveAllowedRedirectDomains(final ServletPolicyRule policy) {
         if (policy == null) {
             return Collections.emptySet();
@@ -129,6 +139,9 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
         return policy.getExtensionLowerSet(ALLOWED_REDIRECT_DOMAINS_KEYS);
     }
 
+    /**
+     * 리다이렉트 URL 검사를 수행할 대상 파라미터 이름 집합을 반환합니다.
+     */
     public static Set<String> resolveRedirectParamNames(final ServletPolicyRule policy) {
         Set<String> names = new LinkedHashSet<>(DEFAULT_REDIRECT_PARAM_NAMES);
         if (policy != null) {
@@ -222,6 +235,9 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
         }
     }
 
+    /**
+     * 대상 호스트명이 허용된 도메인 화이트리스트(와일드카드 서브도메인 포함)와 일치하는지 확인합니다.
+     */
     private static boolean matchesDomainWhitelist(final String host, final Set<String> allowedDomains) {
         for (String allowed : allowedDomains) {
             if (StringUtils.isBlank(allowed)) continue;

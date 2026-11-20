@@ -28,6 +28,7 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
     public static final String NAME = "PARAM";
     public static final int ORDER = 30;
 
+    /** 기본 생성자입니다 (식별자: "PARAM", 실행 순서: 30). */
     public ParamPolicyValidator() {
         super(NAME, ORDER);
     }

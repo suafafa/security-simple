@@ -207,6 +207,10 @@ public class SecurityFilter implements Filter {
         return validators;
     }
 
+    /**
+     * 현재 바인딩된 {@link PolicyValidator} 목록을 {@link PolicyValidator#getOrder()} 오름차순으로 정렬하여
+     * 불변 실행 체인 리스트({@code this.validators})로 갱신합니다.
+     */
     private synchronized void rebuildValidatorChain() {
         List<PolicyValidator> sorted = new ArrayList<>(validatorMap.values());
         sorted.sort(Comparator.comparingInt(PolicyValidator::getOrder).thenComparing(PolicyValidator::getName));

@@ -47,10 +47,14 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
     private volatile Method cachedIsValidMethod;
     private volatile Class<?> cachedServiceClass;
 
+    /** 기본 생성자입니다 (식별자: "CSRF", 실행 순서: 15). */
     public CsrfPolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * 서블릿 정책의 {@code csrf} 설정 모드({@code TOKEN}, {@code OAUTH_STATE}, {@code GRANITE})에 따라 CSRF 방어 검증을 수행합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -76,6 +80,9 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
         }
     }
 
+    /**
+     * 서블릿 정책에서 설정된 CSRF 검증 모드를 조회합니다 (미설정 시 {@code NONE}).
+     */
     private String resolveCsrfMode(final ServletPolicyRule policy) {
         if (policy == null) {
             return CSRF_NONE;
@@ -239,6 +246,9 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 리플렉션 캐시를 통해 Adobe Granite CSRFTokenService의 토큰 검증 메서드를 호출합니다.
+     */
     private Boolean invokeCsrfTokenService(final Object service, final HttpServletRequest request, final String token) {
         if (service == null) return null;
         Class<?> clazz = service.getClass();
@@ -269,6 +279,9 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
         return null;
     }
 
+    /**
+     * 요청의 쿠키 배열에서 지정된 이름(대소문자 무시)의 쿠키 값을 추출합니다.
+     */
     private String getCookieValue(final HttpServletRequest request, final String cookieName) {
         if (request == null || request.getCookies() == null) {
             return null;
@@ -281,6 +294,9 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
         return null;
     }
 
+    /**
+     * 기존 HTTP 세션(새 세션 생성 안 함)에서 지정된 속성 값을 문자열로 조회합니다.
+     */
     private String getSessionAttribute(final HttpServletRequest request, final String attrName) {
         if (request == null) {
             return null;
@@ -295,6 +311,9 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
         return null;
     }
 
+    /**
+     * 타이밍 공격(Timing Attack)을 방지하기 위해 상수 시간(Constant-Time)으로 두 토큰 문자열의 일치 여부를 비교합니다.
+     */
     private boolean constantTimeEquals(final String a, final String b) {
         if (a == null || b == null) {
             return false;

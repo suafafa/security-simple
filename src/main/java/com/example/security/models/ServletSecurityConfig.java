@@ -32,6 +32,11 @@ public class ServletSecurityConfig {
     private transient List<ServletPolicyRule> patternPolicies = new CopyOnWriteArrayList<>();
     private transient Map<String, ServletPolicyRule> policiesByTarget = new ConcurrentHashMap<>();
 
+    /**
+     * 전역 필터 활성화 여부로 루트 보안 설정 객체를 생성하고 초기화합니다.
+     *
+     * @param enabled 전역 필터 활성화 여부
+     */
     public ServletSecurityConfig(Boolean enabled) {
         this.enabled = enabled;
         init();

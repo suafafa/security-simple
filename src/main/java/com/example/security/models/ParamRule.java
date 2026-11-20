@@ -200,6 +200,7 @@ public class ParamRule {
         return sb.toString();
     }
 
+    /** 파라미터 규칙의 문자열 표현을 반환합니다. */
     @Override
     public String toString() {
         return toSummaryString();

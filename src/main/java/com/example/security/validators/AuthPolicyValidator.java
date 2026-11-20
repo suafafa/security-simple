@@ -45,10 +45,14 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
             "roles", "groups"
     };
 
+    /** 기본 생성자입니다 (식별자: "AUTH", 실행 순서: 12). */
     public AuthPolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * 요청의 사용자 인증 타입({@code auth}) 및 AEM 역할/그룹({@code roles}) 소속 여부를 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -119,6 +123,9 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 서블릿 정책에서 요구되는 인증 타입({@code auth})을 추출합니다.
+     */
     private String resolveRequiredAuth(final ServletPolicyRule policy) {
         if (policy == null) {
             return null;
@@ -189,6 +196,9 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
         return null;
     }
 
+    /**
+     * 요청 객체로부터 Sling {@link ResourceResolver}를 추출합니다.
+     */
     private ResourceResolver getResourceResolver(final HttpServletRequest request) {
         if (request instanceof SlingHttpServletRequest) {
             return ((SlingHttpServletRequest) request).getResourceResolver();
@@ -200,6 +210,9 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
         return null;
     }
 
+    /**
+     * 대상 사용자가 AEM 시스템 서비스 계정(System User)인지 판별합니다.
+     */
     private boolean isSystemUser(final Authorizable authorizable, final String userId) {
         if (authorizable instanceof User) {
             User user = (User) authorizable;
@@ -220,6 +233,9 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
         return isSystemUserId(userId);
     }
 
+    /**
+     * 대상 사용자가 AEM 내부 작성자/관리자 계정(AEM Author/Admin User)인지 판별합니다.
+     */
     private boolean isAemUser(final Authorizable authorizable, final String userId) {
         if ("admin".equalsIgnoreCase(userId)) {
             return true;
@@ -248,6 +264,9 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
         return isAemUserId(userId);
     }
 
+    /**
+     * 사용자 ID 명명 규칙 기반으로 시스템 서비스 계정 여부를 보조 판별합니다.
+     */
     private boolean isSystemUserId(final String userId) {
         if (userId == null) {
             return false;
@@ -259,6 +278,9 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
                 || lower.contains("system-user");
     }
 
+    /**
+     * 사용자 ID 명명 규칙 기반으로 AEM 내부 계정 여부를 보조 판별합니다.
+     */
     private boolean isAemUserId(final String userId) {
         if (userId == null) {
             return false;

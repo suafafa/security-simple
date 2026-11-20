@@ -63,10 +63,14 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
     // 단위 테스트 또는 로컬 환경에서 직접 RunMode를 주입할 수 있는 오버라이드 집합
     private volatile Set<String> customActiveRunModes;
 
+    /** 기본 생성자입니다 (식별자: "RUNMODE", 실행 순서: 5). */
     public RunModePolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * 현재 AEM 인스턴스의 RunMode가 서블릿 정책의 {@code runModes}(허용) 및 {@code blockedRunModes}(차단) 조건을 충족하는지 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -125,6 +129,9 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 문자열 집합 내에 대상 문자열이 대소문자 구분 없이 포함되어 있는지 확인합니다.
+     */
     private static boolean containsIgnoreCase(final Set<String> set, final String target) {
         if (set == null || set.isEmpty() || StringUtils.isBlank(target)) {
             return false;

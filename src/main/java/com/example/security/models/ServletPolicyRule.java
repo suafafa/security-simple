@@ -630,6 +630,7 @@ public class ServletPolicyRule {
         return sb.toString();
     }
 
+    /** 정책 규칙의 문자열 표현을 반환합니다. */
     @Override
     public String toString() {
         return "ServletPolicyRule[" + toPolicySummaryString() + "]";

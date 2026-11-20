@@ -26,10 +26,14 @@ public class PayloadSizePolicyValidator extends AbstractPolicyValidator {
             "maxPayloadSize"
     };
 
+    /** 기본 생성자입니다 (식별자: "PAYLOAD_SIZE", 실행 순서: 25). */
     public PayloadSizePolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * POST/PUT/PATCH 요청의 {@code Content-Length}가 설정된 최대 페이로드 크기({@code maxPayloadSize})를 초과하는지 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -65,6 +69,9 @@ public class PayloadSizePolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 서블릿 정책에서 허용된 최대 페이로드 크기(바이트 단위)를 조회합니다 (미설정 시 기본값 2MB).
+     */
     public static long resolveMaxPayloadSize(final ServletPolicyRule policy) {
         if (policy == null) {
             return DEFAULT_MAX_PAYLOAD_BYTES;
@@ -76,6 +83,9 @@ public class PayloadSizePolicyValidator extends AbstractPolicyValidator {
         return parsePayloadSize(raw);
     }
 
+    /**
+     * 용량 표기 문자열(예: {@code "5MB"}, {@code "500KB"}, {@code "1024B"}) 또는 숫자를 바이트 단위 {@code long} 값으로 변환합니다.
+     */
     public static long parsePayloadSize(final Object sizeObj) {
         if (sizeObj == null) {
             return DEFAULT_MAX_PAYLOAD_BYTES;

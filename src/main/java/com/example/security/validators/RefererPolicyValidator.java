@@ -23,6 +23,7 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
     public static final String NAME = "REFERER";
     public static final int ORDER = 10;
 
+    /** 기본 생성자입니다 (식별자: "REFERER", 실행 순서: 10). */
     public RefererPolicyValidator() {
         super(NAME, ORDER);
     }

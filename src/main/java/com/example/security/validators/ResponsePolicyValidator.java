@@ -45,10 +45,15 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
             "callbackParam"
     };
 
+    /** 기본 생성자입니다 (식별자: "RESPONSE", 실행 순서: 40). */
     public ResponsePolicyValidator() {
         super(NAME, ORDER);
     }
 
+    /**
+     * 요청의 {@code Accept} 헤더가 서블릿의 {@code responseType}과 호환되는지,
+     * 그리고 {@code JSONP} 응답 시 콜백 파라미터가 안전한 식별자인지 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -108,6 +113,9 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 서블릿 정책 또는 기본 정책에서 기대하는 응답 타입({@code responseType})을 조회합니다.
+     */
     private String resolveExpectedResponseType(final ServletPolicyRule policy, final ServletSecurityConfig rootConfig) {
         if (policy != null) {
             String rt = policy.getExtensionString(RESPONSE_TYPE_KEYS);
@@ -128,6 +136,9 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
         return RESP_DEFAULT;
     }
 
+    /**
+     * JSONP 응답 시 사용할 콜백 파라미터 이름({@code callbackParam}, 기본값 {@code "callback"})을 조회합니다.
+     */
     private String resolveCallbackParam(final ServletPolicyRule policy) {
         if (policy != null) {
             String cb = policy.getExtensionString(CALLBACK_PARAM_KEYS);
@@ -138,6 +149,9 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
         return "callback";
     }
 
+    /**
+     * 클라이언트의 {@code Accept} 헤더 값이 서블릿의 예상 응답 타입과 호환되는지 판별합니다.
+     */
     private boolean isAcceptCompatible(final String lowerAccept, final String expectedType) {
         if (lowerAccept.contains("*/*")) {
             return true;

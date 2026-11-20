@@ -86,6 +86,9 @@ public class EndpointPolicyConfig {
         this.modificationListener = listener;
     }
 
+    /**
+     * 등록된 설정 변경 리스너에게 설정 갱신 이벤트를 즉시 통지합니다.
+     */
     private void notifyModificationListener() {
         Runnable listener = this.modificationListener;
         if (listener != null) {
@@ -179,6 +182,9 @@ public class EndpointPolicyConfig {
         return instance;
     }
 
+    /**
+     * OSGi 프로퍼티 맵 또는 {@link Config} 객체에서 {@code policies} 항목 리스트를 추출합니다.
+     */
     private static List<Object> extractPolicyEntries(final Config config, final Map<String, Object> props) {
         List<Object> result = new ArrayList<>();
         Object raw = props.get("policies");
@@ -220,6 +226,9 @@ public class EndpointPolicyConfig {
         return result;
     }
 
+    /**
+     * OSGi 프로퍼티 맵에서 {@code service.pid} 또는 {@code component.name}을 추출합니다.
+     */
     private static String resolveConfigPid(final Map<String, Object> props) {
         for (String key : new String[]{"service.pid", "component.name"}) {
             Object val = props.get(key);
@@ -230,6 +239,9 @@ public class EndpointPolicyConfig {
         return "";
     }
 
+    /**
+     * 설정 객체, 프로퍼티 맵 또는 Factory PID({@code ~별칭})로부터 논리적 번들 식별자({@code bundle.id})를 결정합니다.
+     */
     private static String resolveBundleId(final Config config, final Map<String, Object> props, final String pid) {
         if (config != null && StringUtils.isNotBlank(config.bundle_id())) {
             return config.bundle_id().trim();

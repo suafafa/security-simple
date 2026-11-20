@@ -28,6 +28,7 @@ public class MethodPolicyValidator extends AbstractPolicyValidator {
             "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"
     )));
 
+    /** 기본 생성자입니다 (식별자: "METHOD", 실행 순서: 20). */
     public MethodPolicyValidator() {
         super(NAME, ORDER);
     }

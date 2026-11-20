@@ -9,6 +9,7 @@ import javax.servlet.http.HttpServletRequest;
  */
 public final class SecurityUtils {
 
+    /** 유틸리티 클래스 인스턴스화 방지용 private 생성자입니다. */
     private SecurityUtils() {
     }
 
