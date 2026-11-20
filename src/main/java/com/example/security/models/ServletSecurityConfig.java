@@ -136,9 +136,6 @@ public class ServletSecurityConfig {
             if (exactUriMap != null && !exactUriMap.isEmpty()) {
                 ServletPolicyRule match = exactUriMap.get(lowerUri);
                 if (match != null) {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("[정책 매칭: Tier 1 - URI 정확 일치] requestUri=[{}] -> target=[{}]", requestUri, match.getTarget());
-                    }
                     return match;
                 }
             }
@@ -150,10 +147,6 @@ public class ServletSecurityConfig {
                 String baseUri = lowerUri.substring(0, dotIdx);
                 ServletPolicyRule match = exactUriMap.get(baseUri);
                 if (match != null) {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("[정책 매칭: Tier 2 - Base URI 일치] requestUri=[{}], baseUri=[{}] -> target=[{}]",
-                                requestUri, baseUri, match.getTarget());
-                    }
                     return match;
                 }
             }
@@ -167,18 +160,10 @@ public class ServletSecurityConfig {
                 if (resourceType != null && resourceTypeMap != null && !resourceTypeMap.isEmpty()) {
                     ServletPolicyRule match = resourceTypeMap.get(resourceType);
                     if (match != null) {
-                        if (LOG.isDebugEnabled()) {
-                            LOG.debug("[정책 매칭: Tier 3 - ResourceType 일치] resourceType=[{}] -> target=[{}]",
-                                    resourceType, match.getTarget());
-                        }
                         return match;
                     }
                     for (Map.Entry<String, ServletPolicyRule> entry : resourceTypeMap.entrySet()) {
                         if (resource.isResourceType(entry.getKey())) {
-                            if (LOG.isDebugEnabled()) {
-                                LOG.debug("[정책 매칭: Tier 3 - 상위 ResourceType 일치] resourceType=[{}] -> target=[{}]",
-                                        resourceType, entry.getValue().getTarget());
-                            }
                             return entry.getValue();
                         }
                     }
@@ -190,10 +175,6 @@ public class ServletSecurityConfig {
         if (patternPolicies != null && !patternPolicies.isEmpty()) {
             for (ServletPolicyRule rule : patternPolicies) {
                 if (rule.matches(request)) {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("[정책 매칭: Tier 4 - 정규식 패턴 일치] requestUri=[{}] -> target=[{}]",
-                                requestUri, rule.getTarget());
-                    }
                     return rule;
                 }
             }
@@ -204,10 +185,6 @@ public class ServletSecurityConfig {
             if (exactUriMap != null && !exactUriMap.isEmpty()) {
                 for (ServletPolicyRule rule : exactUriMap.values()) {
                     if (rule.matches(request)) {
-                        if (LOG.isDebugEnabled()) {
-                            LOG.debug("[정책 매칭: Tier 5 - 경로 접두사 일치] requestUri=[{}] -> target=[{}]",
-                                    requestUri, rule.getTarget());
-                        }
                         return rule;
                     }
                 }
@@ -215,10 +192,6 @@ public class ServletSecurityConfig {
             if (resourceTypeMap != null && !resourceTypeMap.isEmpty()) {
                 for (ServletPolicyRule rule : resourceTypeMap.values()) {
                     if (rule.matches(request)) {
-                        if (LOG.isDebugEnabled()) {
-                            LOG.debug("[정책 매칭: Tier 5 - 컴포넌트 경로 포함] requestUri=[{}] -> target=[{}]",
-                                    requestUri, rule.getTarget());
-                        }
                         return rule;
                     }
                 }
@@ -226,9 +199,6 @@ public class ServletSecurityConfig {
         }
 
         // 계층 6: 매칭된 정책이 없을 경우 기본 정책(defaultPolicy)으로 폴백
-        if (defaultPolicy != null && LOG.isDebugEnabled()) {
-            LOG.debug("[정책 매칭: Tier 6 - DefaultPolicy 폴백 적용] requestUri=[{}] -> target=[DEFAULT]", requestUri);
-        }
         return defaultPolicy;
     }
 

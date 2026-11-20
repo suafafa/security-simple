@@ -105,11 +105,6 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         String clientIp = SecurityUtils.getClientIp(request);
         String bucketKey = resolveBucketKey(request, policy, clientIp);
 
-        if (log.isDebugEnabled()) {
-            log.debug("[RATE_LIMIT] Checking bucket [{}] (max: {}/{}s) for target [{}]",
-                    bucketKey, maxRequests, windowSeconds, policy.getTarget());
-        }
-
         // 주기적/온디맨드 메모리 누수 방지 청소 (스톰 방지 쓰로틀링 적용)
         if (bucketMap.size() > MAX_TRACKED_BUCKETS) {
             tryCleanupExpiredBuckets(now);

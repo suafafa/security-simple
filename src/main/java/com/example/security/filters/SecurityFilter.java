@@ -469,8 +469,6 @@ public class SecurityFilter implements Filter {
             throws IOException, ServletException {
 
         if (!enabled || !(servletRequest instanceof HttpServletRequest) || !(servletResponse instanceof HttpServletResponse)) {
-            LOG.debug("SecurityFilter skipped: filter enabled={}, isHttpRequest={}",
-                    enabled, servletRequest instanceof HttpServletRequest);
             chain.doFilter(servletRequest, servletResponse);
             return;
         }
@@ -480,33 +478,20 @@ public class SecurityFilter implements Filter {
 
         String requestUri = httpRequest.getRequestURI();
         if (!matchesFilterPattern(requestUri)) {
-            LOG.debug("SecurityFilter bypassed for non-matching filter pattern ({}): URI=[{}]", filterPattern, requestUri);
             chain.doFilter(servletRequest, servletResponse);
             return;
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("--> [FILTER START] Evaluating request: Method=[{}], URI=[{}], Query=[{}], ClientIP=[{}]",
-                    httpRequest.getMethod(), requestUri, httpRequest.getQueryString(), SecurityUtils.getClientIp(httpRequest));
-        }
-
         if (!evaluatePoliciesAndFindActive(httpRequest, httpResponse)) {
-            LOG.debug("<-- [FILTER BLOCKED] Request [{} {}] was rejected by security policy.",
-                    httpRequest.getMethod(), requestUri);
             return;
-        }
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<-- [FILTER PASS] Request [{} {}] passed all security validations (Referer, Method, Param).",
-                    httpRequest.getMethod(), requestUri);
         }
 
         chain.doFilter(servletRequest, servletResponse);
     }
 
     /**
-     * 요청에 매칭되는 서블릿 보안 정책을 찾고, 활성화된 검증기 체인(REFERER -> METHOD -> PARAM)을 실행합니다.
-     * 검증에 실패하면 즉시 {@link #handleSecurityViolation}을 호출하여 차단 로그 및 에러 응답을 처리합니다.
+     * 요청에 매칭되는 서블릿 보안 정책을 찾고, 활성화된 검증기 체인을 실행합니다.
+     * 서블릿별로 검증 성공 시 또는 실패 시 디버그 로그를 딱 한 번만 출력합니다.
      *
      * @param request  유입된 HTTP 요청
      * @param response HTTP 응답
@@ -516,31 +501,15 @@ public class SecurityFilter implements Filter {
     private boolean evaluatePoliciesAndFindActive(final HttpServletRequest request,
                                                   final HttpServletResponse response) throws IOException {
         if (servletSecurityConfig == null || !servletSecurityConfig.isEnabled()) {
-            LOG.debug("ServletSecurityConfig is null or disabled. Skipping policy evaluation for URI=[{}]", request.getRequestURI());
             return true;
         }
 
         ServletPolicyRule matchedPolicy = servletSecurityConfig.findMatchingPolicy(request);
-        if (matchedPolicy == null) {
-            LOG.debug("No matching security policy found for URI=[{}]. Allowing request.", request.getRequestURI());
+        if (matchedPolicy == null || !matchedPolicy.isEnabled()) {
             return true;
         }
 
-        if (!matchedPolicy.isEnabled()) {
-            LOG.debug("Matched policy target=[{}] has enabled=false. Bypassing security validation for URI=[{}].",
-                    matchedPolicy.getTarget(), request.getRequestURI());
-            return true;
-        }
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Evaluating policy target [{}] for [{} {}]: AppliedServletPolicy=[{}]",
-                    matchedPolicy.getTarget(), request.getMethod(), request.getRequestURI(),
-                    formatAppliedPolicyForLog(matchedPolicy));
-        }
-
-        // 매칭된 정책에 대해 검증기 체인(RUNMODE -> REFERER -> METHOD -> PARAM) 실행
         for (PolicyValidator validator : validators) {
-            LOG.debug("  [*] Executing validator [{}] for target [{}]", validator.getName(), matchedPolicy.getTarget());
             ValidationResult result = validator.validate(request, matchedPolicy, servletSecurityConfig);
             if (!result.isValid()) {
                 String appliedPolicyInfo = formatAppliedPolicyForLog(matchedPolicy);
@@ -554,21 +523,23 @@ public class SecurityFilter implements Filter {
                     continue;
                 }
 
-                LOG.debug("  [!] Validator [{}] FAILED (mode=ENFORCE) for URI [{}]: Status={}, Code={}, Message={} | BlockedByConfig=[{}] | AppliedServletPolicy=[{}]",
-                        validator.getName(), request.getRequestURI(), result.getStatusCode(), result.getSubCode(),
-                        result.getResponseMessage(), blockedConfigInfo, appliedPolicyInfo);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("[SECURITY FAIL] target=[{}], method=[{}], uri=[{}], validator=[{}], status=[{}], code=[{}], blockedByConfig=[{}], appliedPolicy=[{}]",
+                            matchedPolicy.getTarget(), request.getMethod(), request.getRequestURI(),
+                            validator.getName(), result.getStatusCode(), result.getSubCode(),
+                            blockedConfigInfo, appliedPolicyInfo);
+                }
                 handleSecurityViolation(request, response, matchedPolicy, validator.getName(), result.getStatusCode(),
                         result.getSubCode(), result.getViolationDetail(), blockedConfigInfo, result.getResponseMessage());
                 return false;
             }
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("  [+] Validator [{}] PASSED for target [{}] | PassedConfig=[{}]",
-                        validator.getName(), matchedPolicy.getTarget(),
-                        validator.describePassedConfig(request, matchedPolicy, servletSecurityConfig));
-            }
         }
 
-        LOG.debug("All active validators PASSED for target [{}] on URI [{}]", matchedPolicy.getTarget(), request.getRequestURI());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("[SECURITY PASS] target=[{}], method=[{}], uri=[{}], appliedPolicy=[{}]",
+                    matchedPolicy.getTarget(), request.getMethod(), request.getRequestURI(),
+                    formatAppliedPolicyForLog(matchedPolicy));
+        }
         return true;
     }
 
