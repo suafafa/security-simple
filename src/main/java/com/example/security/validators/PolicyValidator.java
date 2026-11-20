@@ -57,16 +57,4 @@ public interface PolicyValidator {
      * @return 성공 또는 차단 상태 코드와 에러 메시지를 담은 ValidationResult
      */
     ValidationResult validate(HttpServletRequest request, ServletPolicyRule policy, ServletSecurityConfig rootConfig);
-
-    /**
-     * 검증기 통과 시 디버그 로그에 출력할 통과된 설정값 요약 정보를 반환합니다.
-     *
-     * @param request    유입된 HTTP 요청
-     * @param policy     매칭된 서블릿 보안 정책 규칙
-     * @param rootConfig 루트 서블릿 보안 설정
-     * @return 통과한 설정값 요약 문자열
-     */
-    default String describePassedConfig(HttpServletRequest request, ServletPolicyRule policy, ServletSecurityConfig rootConfig) {
-        return policy != null ? policy.getTargetIdentifier() : "NONE";
-    }
 }

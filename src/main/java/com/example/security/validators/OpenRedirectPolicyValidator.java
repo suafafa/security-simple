@@ -33,19 +33,19 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
     ));
 
     private static final String[] ALLOWED_REDIRECT_DOMAINS_KEYS = {
-            "allowedRedirectDomains", "allowed_redirect_domains", "redirectDomains", "security.allowedRedirectDomains"
+            "allowedRedirectDomains"
     };
     private static final String[] ALLOW_RELATIVE_REDIRECT_KEYS = {
-            "allowRelativeRedirect", "allow_relative_redirect", "security.allowRelativeRedirect"
+            "allowRelativeRedirect"
     };
     private static final String[] REDIRECT_PARAM_NAMES_KEYS = {
-            "redirectParamNames", "redirect_param_names", "redirectParams", "security.redirectParamNames"
+            "redirectParamNames"
     };
     private static final String[] RESPONSE_TYPE_KEYS = {
-            "responseType", "response_type", "type"
+            "responseType"
     };
     private static final String[] REDIRECT_URL_KEYS = {
-            "redirectUrl", "redirect", "redirect_url"
+            "redirectUrl"
     };
 
     public OpenRedirectPolicyValidator() {
@@ -112,18 +112,6 @@ public class OpenRedirectPolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
-    }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        if (policy == null) {
-            return "NONE";
-        }
-        return "allowRelativeRedirect=" + isAllowRelativeRedirect(policy)
-                + ", allowedRedirectDomains=" + resolveAllowedRedirectDomains(policy)
-                + ", redirectParamNames=" + resolveRedirectParamNames(policy);
     }
 
     public static boolean isAllowRelativeRedirect(final ServletPolicyRule policy) {

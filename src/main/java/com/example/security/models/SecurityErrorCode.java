@@ -39,16 +39,6 @@ public enum SecurityErrorCode {
     PARAM_PATH_TRAVERSAL(400, "SEC-40007", "Bad Request: Potential Path Traversal attack detected in parameter [%s]"),
 
     /**
-     * CWE-89: SQL / JCR-SQL2 / XPath Injection 방어 에러 코드
-     */
-    PARAM_SQL_INJECTION(400, "SEC-40008", "Bad Request: Potential SQL/JCR Injection attack detected in parameter [%s]"),
-
-    /**
-     * CWE-79: Cross-Site Scripting (XSS) 방어 에러 코드
-     */
-    PARAM_XSS(400, "SEC-40009", "Bad Request: Potential Cross-Site Scripting (XSS) attack detected in parameter [%s]"),
-
-    /**
      * CWE-601: Open Redirect (오픈 리다이렉트) 방어 에러 코드
      */
     OPEN_REDIRECT_FORBIDDEN(400, "SEC-40010", "Bad Request: Untrusted or invalid redirect URL: %s"),
@@ -95,15 +85,6 @@ public enum SecurityErrorCode {
      */
     public String getSubCode() {
         return subCode;
-    }
-
-    /**
-     * 포맷팅 전 원본 에러 메시지 템플릿을 반환합니다.
-     *
-     * @return 메시지 템플릿 문자열
-     */
-    public String getMessageTemplate() {
-        return messageTemplate;
     }
 
     /**

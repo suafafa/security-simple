@@ -36,13 +36,13 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
     private static final Pattern VALID_CALLBACK_PATTERN = Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$.]*$");
 
     private static final String[] RESPONSE_TYPE_KEYS = {
-            "responseType", "response_type", "type", "security.responseType"
+            "responseType"
     };
     private static final String[] DEFAULT_RESPONSE_TYPE_KEYS = {
-            "defaultResponseType", "default_response_type"
+            "defaultResponseType"
     };
     private static final String[] CALLBACK_PARAM_KEYS = {
-            "callbackParam", "callback", "jsonpCallbackParam", "jsonpParam"
+            "callbackParam"
     };
 
     public ResponsePolicyValidator() {
@@ -106,19 +106,6 @@ public class ResponsePolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
-    }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        String expectedType = resolveExpectedResponseType(policy, rootConfig);
-        String acceptHeader = request != null ? StringUtils.defaultIfBlank(request.getHeader("Accept"), "*/*") : "*/*";
-        if (RESP_JSONP.equals(expectedType)) {
-            String callbackParam = resolveCallbackParam(policy);
-            return "responseType=" + expectedType + ", callbackParam=" + callbackParam + ", clientAccept=" + acceptHeader;
-        }
-        return "responseType=" + expectedType + ", clientAccept=" + acceptHeader;
     }
 
     private String resolveExpectedResponseType(final ServletPolicyRule policy, final ServletSecurityConfig rootConfig) {

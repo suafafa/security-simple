@@ -1,6 +1,5 @@
 package com.example.security.models;
 
-import com.google.gson.annotations.SerializedName;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.sling.api.SlingHttpServletRequest;
 import org.apache.sling.api.resource.Resource;
@@ -10,33 +9,21 @@ import org.slf4j.LoggerFactory;
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * 전역 필터 활성화 여부(enabled), 기본 신뢰 도메인(defaultReferrer),
- * 전역 검증기(REFERER, METHOD, PARAM) On/Off 설정, 기본 정책(defaultPolicy) 및
+ * 전역 필터 활성화 여부(enabled), 전역 실행 모드(mode), 기본 정책(defaultPolicy) 및
  * 번들별 {@code .cfg.json}({@code EndpointPolicyRegistry})에서 로드된 엔드포인트 보안 정책을 보관하는 루트 설정 컨테이너입니다.
- * 초고속 정책 탐색을 위한 단일 다계층 O(1) 해시 인덱스를 포함합니다.
  */
 public class ServletSecurityConfig {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServletSecurityConfig.class);
 
-    @SerializedName("enabled")
     private Boolean enabled = true;
-
-    /**
-     * 전역 보안 실행 모드 ({@code "ENFORCE"} 또는 {@code "MONITOR"}).
-     * 전역 모드가 {@code "MONITOR"}로 설정되면 모든 서블릿 및 검증기에서 차단 대신 WARN 로그만 남기고 통과합니다.
-     */
-    @SerializedName(value = "mode", alternate = {"policyMode", "securityMode"})
     private String mode = "ENFORCE";
-
-    @SerializedName(value = "defaultPolicy", alternate = {"default", "globalPolicy"})
     private ServletPolicyRule defaultPolicy;
 
     // 단일 O(1) 정책 인덱스 저장소 (.cfg.json 정책 등록용)
@@ -45,17 +32,6 @@ public class ServletSecurityConfig {
     private transient List<ServletPolicyRule> patternPolicies = new CopyOnWriteArrayList<>();
     private transient Map<String, ServletPolicyRule> policiesByTarget = new ConcurrentHashMap<>();
 
-    /**
-     * 기본 생성자입니다.
-     */
-    public ServletSecurityConfig() {
-    }
-
-    /**
-     * 필터 활성화 여부로 루트 보안 설정 객체를 생성합니다.
-     *
-     * @param enabled 전역 필터 활성화 여부
-     */
     public ServletSecurityConfig(Boolean enabled) {
         this.enabled = enabled;
         init();
@@ -228,22 +204,6 @@ public class ServletSecurityConfig {
         } else {
             resourceTypeMap.put(trimmed, rule);
         }
-    }
-
-    /**
-     * 특정 타겟(경로 또는 resourceType)의 보안 정책을 인덱스에서 제거합니다.
-     *
-     * @param target 제거할 타겟(경로 또는 resourceType)
-     */
-    public void unregisterPolicy(final String target) {
-        if (StringUtils.isBlank(target)) {
-            return;
-        }
-        String trimmed = target.trim();
-        policiesByTarget.remove(trimmed);
-        exactUriMap.remove(trimmed.toLowerCase());
-        resourceTypeMap.remove(trimmed);
-        patternPolicies.removeIf(r -> trimmed.equalsIgnoreCase(r.getTarget()));
     }
 
     /**

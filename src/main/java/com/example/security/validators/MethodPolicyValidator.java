@@ -68,14 +68,4 @@ public class MethodPolicyValidator extends AbstractPolicyValidator {
         }
         return pass();
     }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        Set<String> allowedMethods = getAllowedMethods(policy);
-        String allowed = allowedMethods.isEmpty() ? "ALL" : allowedMethods.toString();
-        String method = request != null ? request.getMethod() : "null";
-        return "allowedMethods=" + allowed + ", requestMethod=" + method;
-    }
 }

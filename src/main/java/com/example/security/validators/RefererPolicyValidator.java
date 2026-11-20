@@ -58,17 +58,6 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        Set<String> effectiveReferrers = resolveEffectiveReferrers(policy, rootConfig);
-        String reqReferer = request != null
-                ? StringUtils.defaultIfBlank(request.getHeader("Referer"), request.getHeader("Origin"))
-                : "null";
-        return "allowedReferrers=" + effectiveReferrers + ", requestReferer=" + reqReferer;
-    }
-
     public boolean isRefererAllowed(final HttpServletRequest request,
                                     final ServletPolicyRule policy,
                                     final ServletSecurityConfig rootConfig) {

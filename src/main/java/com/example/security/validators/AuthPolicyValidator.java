@@ -39,10 +39,10 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
     public static final String AUTH_SYSTEM = "SYSTEM";
 
     private static final String[] AUTH_KEYS = {
-            "auth", "authType", "authTypes", "allowedAuthTypes", "security.auth"
+            "auth", "authType"
     };
     private static final String[] ROLE_KEYS = {
-            "roles", "role", "groups", "userGroups", "security.roles"
+            "roles", "groups"
     };
 
     public AuthPolicyValidator() {
@@ -117,21 +117,6 @@ public class AuthPolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
-    }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        if (policy == null) {
-            return "NONE";
-        }
-        String reqAuth = resolveRequiredAuth(policy);
-        Set<String> reqRoles = policy.getExtensionLowerSet(ROLE_KEYS);
-        String actualAuth = request != null ? resolveAuthType(request) : "UNKNOWN";
-        return "auth=" + (StringUtils.isNotBlank(reqAuth) ? reqAuth : "ANY")
-                + ", roles=" + (reqRoles.isEmpty() ? "NONE" : reqRoles)
-                + ", resolvedAuth=" + actualAuth;
     }
 
     private String resolveRequiredAuth(final ServletPolicyRule policy) {

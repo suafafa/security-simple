@@ -23,7 +23,7 @@ public class PayloadSizePolicyValidator extends AbstractPolicyValidator {
     public static final long DEFAULT_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024L; // 기본값 2MB
 
     private static final String[] PAYLOAD_SIZE_KEYS = {
-            "maxPayloadSize", "max_payload_size", "maxBodySize", "maxContentLength", "security.maxPayloadSize"
+            "maxPayloadSize"
     };
 
     public PayloadSizePolicyValidator() {
@@ -63,25 +63,6 @@ public class PayloadSizePolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
-    }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        long maxAllowedBytes = resolveMaxPayloadSize(policy);
-        String rawMax = policy != null ? policy.getExtensionString(PAYLOAD_SIZE_KEYS) : null;
-        if (StringUtils.isBlank(rawMax)) {
-            rawMax = maxAllowedBytes + "B";
-        }
-        long contentLength = -1;
-        if (request != null) {
-            contentLength = request.getContentLengthLong();
-            if (contentLength <= 0) {
-                contentLength = request.getContentLength();
-            }
-        }
-        return "maxPayloadSize=" + rawMax + "(" + maxAllowedBytes + "B), requestContentLength=" + Math.max(0, contentLength) + "B";
     }
 
     public static long resolveMaxPayloadSize(final ServletPolicyRule policy) {

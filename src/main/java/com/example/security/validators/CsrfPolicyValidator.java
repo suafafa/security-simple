@@ -38,7 +38,7 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
     public static final String CSRF_OAUTH_STATE = "OAUTH_STATE";
 
     private static final String[] CSRF_KEYS = {
-            "csrf", "csrfType", "csrfCheck", "security.csrf"
+            "csrf"
     };
 
     private Object csrfTokenService;
@@ -49,15 +49,6 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
 
     public CsrfPolicyValidator() {
         super(NAME, ORDER);
-    }
-
-    public CsrfPolicyValidator(final Object csrfTokenService) {
-        super(NAME, ORDER);
-        this.csrfTokenService = csrfTokenService;
-    }
-
-    public void setCsrfTokenService(final Object csrfTokenService) {
-        this.csrfTokenService = csrfTokenService;
     }
 
     @Override
@@ -83,16 +74,6 @@ public class CsrfPolicyValidator extends AbstractPolicyValidator {
             default:
                 return pass();
         }
-    }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        if (policy == null) {
-            return "NONE";
-        }
-        return "csrf=" + resolveCsrfMode(policy);
     }
 
     private String resolveCsrfMode(final ServletPolicyRule policy) {

@@ -182,9 +182,6 @@ public class EndpointPolicyConfig {
     private static List<Object> extractPolicyEntries(final Config config, final Map<String, Object> props) {
         List<Object> result = new ArrayList<>();
         Object raw = props.get("policies");
-        if (raw == null) {
-            raw = props.get("security.policies");
-        }
         if (raw instanceof Object[]) {
             for (Object item : (Object[]) raw) {
                 if (item != null) {
@@ -237,11 +234,9 @@ public class EndpointPolicyConfig {
         if (config != null && StringUtils.isNotBlank(config.bundle_id())) {
             return config.bundle_id().trim();
         }
-        for (String key : new String[]{"bundle.id", "bundle_id", "bundleId"}) {
-            Object val = props.get(key);
-            if (val != null && StringUtils.isNotBlank(val.toString())) {
-                return val.toString().trim();
-            }
+        Object val = props.get("bundle.id");
+        if (val != null && StringUtils.isNotBlank(val.toString())) {
+            return val.toString().trim();
         }
         if (StringUtils.isNotBlank(pid)) {
             int tildeIdx = pid.indexOf('~');

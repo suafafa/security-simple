@@ -46,13 +46,10 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
     public static final int ORDER = 5;
 
     private static final String[] ALLOWED_RUNMODE_KEYS = {
-            "runModes", "runMode", "allowedRunModes", "allowedRunMode",
-            "runmodes", "runmode", "allowed_run_modes", "allowed_run_mode",
-            "security.runModes", "security.runMode"
+            "runModes", "allowedRunModes"
     };
     private static final String[] BLOCKED_RUNMODE_KEYS = {
-            "blockedRunModes", "blockedRunMode", "deniedRunModes", "deniedRunMode",
-            "blocked_run_modes", "blocked_run_mode", "security.blockedRunModes", "security.blockedRunMode"
+            "blockedRunModes"
     };
 
     @Reference(
@@ -66,21 +63,8 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
     // 단위 테스트 또는 로컬 환경에서 직접 RunMode를 주입할 수 있는 오버라이드 집합
     private volatile Set<String> customActiveRunModes;
 
-    /**
-     * 기본 생성자입니다 (식별자: "RUNMODE", 실행 우선순위: 5 - 가장 먼저 실행).
-     */
     public RunModePolicyValidator() {
         super(NAME, ORDER);
-    }
-
-    /**
-     * 테스트 또는 프로그래밍 방식의 초기화용 생성자입니다.
-     *
-     * @param activeRunModes 현재 활성화된 RunMode 집합 (예: "author", "dev")
-     */
-    public RunModePolicyValidator(final Set<String> activeRunModes) {
-        super(NAME, ORDER);
-        setActiveRunModes(activeRunModes);
     }
 
     @Override
@@ -157,20 +141,6 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
         return false;
     }
 
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        if (policy == null) {
-            return "NONE";
-        }
-        Set<String> allowed = policy.getExtensionLowerSet(ALLOWED_RUNMODE_KEYS);
-        Set<String> blocked = policy.getExtensionLowerSet(BLOCKED_RUNMODE_KEYS);
-        return "allowedRunModes=" + (allowed.isEmpty() ? "ALL" : allowed)
-                + ", blockedRunModes=" + (blocked.isEmpty() ? "NONE" : blocked)
-                + ", activeRunModes=" + resolveActiveRunModes();
-    }
-
     /**
      * 현재 AEM 인스턴스의 활성 RunMode 집합(소문자)을 조회합니다.
      * 우선순위:
@@ -228,14 +198,5 @@ public class RunModePolicyValidator extends AbstractPolicyValidator {
             }
         }
         this.customActiveRunModes = Collections.unmodifiableSet(lower);
-    }
-
-    /**
-     * OSGi {@link SlingSettingsService}를 바인딩합니다.
-     *
-     * @param slingSettings SlingSettingsService 인스턴스
-     */
-    public void bindSlingSettings(final SlingSettingsService slingSettings) {
-        this.slingSettings = slingSettings;
     }
 }

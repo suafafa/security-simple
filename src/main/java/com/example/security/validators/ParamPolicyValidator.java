@@ -201,31 +201,6 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        if (policy == null) {
-            return "NONE";
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("allowUndefinedParams=").append(isAllowUndefinedParams(policy));
-        Map<String, ParamRule> configuredParams = resolveParams(policy, rootConfig);
-        if (configuredParams != null && !configuredParams.isEmpty()) {
-            sb.append(", params={");
-            boolean first = true;
-            for (Map.Entry<String, ParamRule> entry : configuredParams.entrySet()) {
-                if (!first) sb.append(", ");
-                first = false;
-                sb.append(entry.getKey()).append("=").append(entry.getValue() != null ? entry.getValue().toSummaryString() : "{}");
-            }
-            sb.append("}");
-        } else {
-            sb.append(", params={}");
-        }
-        return sb.toString();
-    }
-
     public static boolean isPathTraversalAttack(final String value) {
         if (StringUtils.isBlank(value)) {
             return false;

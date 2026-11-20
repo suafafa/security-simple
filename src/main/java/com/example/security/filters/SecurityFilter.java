@@ -329,24 +329,6 @@ public class SecurityFilter implements Filter {
     }
 
     /**
-     * 현재 설정된 {@code sling.filter.pattern} 문자열을 반환합니다.
-     *
-     * @return 필터 패턴 문자열
-     */
-    public String getFilterPattern() {
-        return filterPattern;
-    }
-
-    /**
-     * 현재 컴파일된 {@code sling.filter.pattern} {@link Pattern} 객체를 반환합니다.
-     *
-     * @return 컴파일된 정규식 Pattern 객체
-     */
-    public Pattern getCompiledFilterPattern() {
-        return compiledFilterPattern;
-    }
-
-    /**
      * OSGi 컴포넌트 활성화({@code @Activate}) 및 설정 변경({@code @Modified}) 시 호출됩니다.
      * OSGi {@link Config} 객체로부터 기본 보안 정책과 검증기 활성화 상태를 로드하고,
      * 바인딩된 서블릿들의 동적 정책을 동기화합니다.

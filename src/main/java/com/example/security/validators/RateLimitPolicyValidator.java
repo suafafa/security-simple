@@ -34,13 +34,13 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
     private static final long MIN_CLEANUP_INTERVAL_MILLIS = 30 * 1000L; // 청소 스톰 방지 최소 주기 (30초)
 
     private static final String[] RATE_LIMIT_KEYS = {
-            "rateLimit", "rate_limit", "maxRequests", "rateLimitRequests", "security.rateLimit"
+            "rateLimit"
     };
     private static final String[] WINDOW_KEYS = {
-            "rateLimitWindow", "rate_limit_window", "rateWindowSeconds", "windowSeconds", "security.rateLimitWindow"
+            "rateLimitWindow"
     };
     private static final String[] KEY_MODE_KEYS = {
-            "rateLimitKey", "rate_limit_key", "security.rateLimitKey"
+            "rateLimitKey"
     };
 
     /**
@@ -131,17 +131,6 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
         }
 
         return pass();
-    }
-
-    @Override
-    public String describePassedConfig(final HttpServletRequest request,
-                                       final ServletPolicyRule policy,
-                                       final ServletSecurityConfig rootConfig) {
-        Integer maxRequests = resolveRateLimit(policy);
-        if (policy == null || maxRequests == null || maxRequests <= 0) {
-            return "rateLimit=OFF";
-        }
-        return "rateLimit=" + maxRequests + "/" + resolveRateLimitWindow(policy) + "s, rateLimitKey=" + resolveRateLimitKey(policy);
     }
 
     private Integer resolveRateLimit(final ServletPolicyRule policy) {
@@ -246,18 +235,5 @@ public class RateLimitPolicyValidator extends AbstractPolicyValidator {
                 }
             }
         }
-    }
-
-    /**
-     * 테스트 및 모니터링을 위한 버킷 맵 초기화
-     */
-    public void reset() {
-        bucketMap.clear();
-        lastCleanupTime.set(0L);
-        isCleaningUp.set(false);
-    }
-
-    public int getActiveBucketCount() {
-        return bucketMap.size();
     }
 }

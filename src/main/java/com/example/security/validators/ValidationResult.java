@@ -52,18 +52,6 @@ public class ValidationResult {
     }
 
     /**
-     * 보안 정책 위반으로 인한 차단 결과 객체를 생성합니다.
-     *
-     * @param errorCode       표준 보안 에러 코드
-     * @param violationDetail 서버 로그용 상세 위반 내용
-     * @param messageArgs     에러 메시지 템플릿 포맷팅 인자
-     * @return 검증 실패 ValidationResult 인스턴스
-     */
-    public static ValidationResult error(SecurityErrorCode errorCode, String violationDetail, Object... messageArgs) {
-        return errorWithConfig(errorCode, violationDetail, violationDetail, messageArgs);
-    }
-
-    /**
      * 차단을 유발한 구체적인 설정값 정보(blockedConfig)를 포함하여 보안 정책 위반 결과 객체를 생성합니다.
      *
      * @param errorCode       표준 보안 에러 코드
@@ -79,18 +67,6 @@ public class ValidationResult {
         }
         String message = errorCode.format(messageArgs);
         return new ValidationResult(false, errorCode.getHttpStatus(), errorCode, errorCode.getSubCode(), blockedConfig, violationDetail, message);
-    }
-
-    /**
-     * 사용자 정의 HTTP 상태 코드와 메시지로 차단 결과 객체를 생성합니다.
-     *
-     * @param statusCode      HTTP 상태 코드
-     * @param violationDetail 서버 로그용 상세 위반 내용
-     * @param responseMessage 클라이언트에 반환할 응답 메시지
-     * @return 검증 실패 ValidationResult 인스턴스
-     */
-    public static ValidationResult error(int statusCode, String violationDetail, String responseMessage) {
-        return new ValidationResult(false, statusCode, null, null, violationDetail, violationDetail, responseMessage);
     }
 
     /**
