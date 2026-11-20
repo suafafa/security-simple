@@ -1,36 +1,40 @@
 # 🛡️ AEM 6.5 Lightweight Security Filter (`security-simple`)
 
-AEM 6.5 서블릿을 위한 **경량 보안 필터(`SecurityFilter`)** 프로젝트입니다.  
-기본 제공되는 **4대 보안 검증기(`RunModePolicyValidator`, `RefererPolicyValidator`, `MethodPolicyValidator`, `ParamPolicyValidator`)**와 번들별 **`.cfg.json` 기반 정책 레지스트리(`EndpointPolicyRegistry`)**, 그리고 **플러그인 방식의 `PolicyValidator` 확장 아키텍처(`AbstractPolicyValidator` & `extensions`)**로 가볍고 직관적으로 구성한 버전입니다.
+AEM 6.5 서블릿을 위한 **플러그인 기반 경량 보안 필터(`SecurityFilter`)** 프로젝트입니다.  
+**10대 내장 보안 검증기(`PolicyValidator`) 체인**과 번들별 **`.cfg.json` 기반 동적 정책 레지스트리(`EndpointPolicyRegistry`)**, 그리고 **`ServletPolicyRule` 수정 없이 확장 가능한 스키마리스(`extensions`) 플러그인 아키텍처**로 구성되어 있습니다.
 
 ---
 
 ## 📊 0. 아키텍처 및 기능 기술서 (PPT / 프레젠테이션 문서)
 
-전체 시스템 아키텍처, 6단계 정책 매칭, 4대 Validator 및 커스텀 Validator 플러그인 확장 구조, DSL 문법, 로깅(`BlockedByConfig` / `AppliedServletPolicy`) 및 에러 코드 규격을 설명하는 프레젠테이션 문서가 [`docs/`](docs/) 디렉토리에 포함되어 있습니다:
+전체 시스템 아키텍처, 6단계 정책 매칭, Validator 플러그인 확장 구조, DSL 문법, 로깅 및 에러 코드 규격을 설명하는 프레젠테이션 문서가 [`docs/`](docs/) 디렉토리에 포함되어 있습니다:
 
-- 📑 **PowerPoint 문서 (`.pptx`)**: [`docs/AEM_Security_Simple_Architecture_Guide.pptx`](docs/AEM_Security_Simple_Architecture_Guide.pptx) (총 20슬라이드, 16:9 와이드스크린 — 시스템 아키텍처 다이어그램[심플/상세], 필터 생명주기 및 처리 흐름도[Phase 1·2·3 시퀀스 다이어그램], UML 클래스 다이어그램[심플/상세], 플러그인 Validator 확장 & `RunModePolicyValidator` 가이드 포함)
-- 🌐 **웹 슬라이드 덱 (`.html`)**: [`docs/AEM_Security_Simple_Presentation.html`](docs/AEM_Security_Simple_Presentation.html) (브라우저에서 바로 열람 및 방향키 `←`/`→` 이동, `Cmd+P` PDF 인쇄 지원)
-
----
-
-## 📌 1. 핵심 4대 Validator 구성 및 플러그인 실행 순서
-
-필터 체인은 `sling.filter.pattern`(기본값: `(/aemapi/.*|/sysapi/.*)`)과 일치하는 요청에 대해 `PolicyValidator.getOrder()` 오름차순으로 Validator를 순차 실행합니다:
-
-| 순서 (`getOrder()`) | Validator 클래스 | 검증기 코드명 | 주요 검증 내용 | 차단 시 응답 코드 |
-| :---: | :--- | :---: | :--- | :---: |
-| **1 (`5`)** | `RunModePolicyValidator` | `RUNMODE` | 현재 AEM 인스턴스 RunMode(`author`, `publish`, `dev`, `prod` 등)가 정책의 `runModes`(허용) 및 `blockedRunModes`(차단) 규칙을 충족하는지 검증 | `403 Forbidden` (`SEC-40305`) |
-| **2 (`10`)** | `RefererPolicyValidator` | `REFERER` | 요청 `Referer` 헤더가 기본 허용 도메인(`default.referrer`) 또는 정책의 `allowedReferrers`와 일치하는지 검증 | `403 Forbidden` (`SEC-40303`) |
-| **3 (`20`)** | `MethodPolicyValidator` | `METHOD` | 요청 HTTP Method(`GET`, `POST` 등)가 허용된 `methods` 목록에 포함되는지 검증 | `405 Method Not Allowed` (`SEC-40501`) |
-| **4 (`30`)** | `ParamPolicyValidator` | `PARAM` | 필수 여부(`required`), 미정의 파라미터 차단(`allowUndefinedParams=false`), Path Traversal(`SEC-40007`), 길이(`min..max`), 정규식(`pattern`) 검증 | `400 Bad Request` (`SEC-40001` ~ `SEC-40007`) |
-| **확장 (`100`)** | `AbstractPolicyValidator` 상속 클래스 | 사용자 정의 | `@Component(service = PolicyValidator.class)` 선언만으로 `SecurityFilter` 및 `ServletPolicyRule` 수정 없이 자동 등록 | 사용자 정의 (`SEC-XXXXX`) |
+- 📑 **PowerPoint 문서 (`.pptx`)**: [`docs/AEM_Security_Simple_Architecture_Guide.pptx`](docs/AEM_Security_Simple_Architecture_Guide.pptx)
+- 🌐 **웹 슬라이드 덱 (`.html`)**: [`docs/AEM_Security_Simple_Presentation.html`](docs/AEM_Security_Simple_Presentation.html)
 
 ---
 
-## 🔄 2. 필터 생명주기 및 처리 흐름 (`activate` & `doFilter`)
+## 📌 1. 전체 10대 내장 `PolicyValidator` 및 실행 순서
 
-`SecurityFilter`는 OSGi 컴포넌트로서 시스템 기동 및 설정 변경 시 실행되는 **`activate()` 단계**, 번들별 `.cfg.json` 설정을 수집하는 **`EndpointPolicyRegistry` 연동 단계**, 그리고 클라이언트의 HTTP 요청을 실시간으로 가로채 검증하는 **`doFilter()` 단계**로 나뉩니다.
+`SecurityFilter`는 OSGi 컨테이너에서 `@Component(service = PolicyValidator.class)`로 등록된 모든 검증기를 `@Reference(cardinality = MULTIPLE)`로 동적 바인딩하고, **`PolicyValidator.getOrder()` 오름차순**으로 자동 정렬하여 순차 실행합니다:
+
+| 실행 순서 (`getOrder()`) | Validator 클래스 | 식별자 (`getName()`) | `.cfg.json` 설정 키 (`extensions`) | 주요 검증 내용 | 차단 시 HTTP 상태 및 에러 코드 |
+| :---: | :--- | :---: | :--- | :--- | :--- |
+| **1 (`5`)** | [`RunModePolicyValidator`](src/main/java/com/example/security/validators/RunModePolicyValidator.java) | `RUNMODE` | `runModes` (또는 `allowedRunModes`), `blockedRunModes` | 현재 AEM 인스턴스 RunMode(`author`, `publish`, `dev`, `stage`, `prod`) 허용/차단 여부 검증 | `403 Forbidden`<br>(`SEC-40305`) |
+| **2 (`8`)** | [`RateLimitPolicyValidator`](src/main/java/com/example/security/validators/RateLimitPolicyValidator.java) | `RATE_LIMIT` | `rateLimit`, `rateLimitWindow`, `rateLimitKey` | 슬라이딩 윈도우 기반 IP / IP+타겟 / 사용자별 요청 빈도 제한 (DoS 및 브루트포스 방어) | `429 Too Many Requests`<br>(`SEC-42901`) |
+| **3 (`10`)** | [`RefererPolicyValidator`](src/main/java/com/example/security/validators/RefererPolicyValidator.java) | `REFERER` | `allowedReferrers` | 요청 `Referer` 또는 `Origin` 헤더가 기본 허용 도메인(`default.referrers`) 및 서블릿 허용 도메인과 일치하는지 검증 | `403 Forbidden`<br>(`SEC-40303`) |
+| **4 (`12`)** | [`AuthPolicyValidator`](src/main/java/com/example/security/validators/AuthPolicyValidator.java) | `AUTH` | `auth` (또는 `authType`), `roles` (또는 `groups`) | 사용자 인증 유형(`ANONYMOUS`, `SA_USER`, `AEM_USER`, `SYSTEM`) 및 AEM JCR 그룹(`roles`) 소속 여부 검증 | `401 Unauthorized` (`SEC-40101`)<br>`403 Forbidden` (`SEC-40301`, `SEC-40302`) |
+| **5 (`15`)** | [`CsrfPolicyValidator`](src/main/java/com/example/security/validators/CsrfPolicyValidator.java) | `CSRF` | `csrf` | CSRF 방어 검증 (`NONE`, 표준 `TOKEN`, OAuth 콜백 `OAUTH_STATE`, AEM `GRANITE` 토큰) | `403 Forbidden`<br>(`SEC-40304`, `SEC-40306` ~ `SEC-40310`) |
+| **6 (`20`)** | [`MethodPolicyValidator`](src/main/java/com/example/security/validators/MethodPolicyValidator.java) | `METHOD` | `methods` | 요청 HTTP Method(`GET`, `POST`, `PUT`, `DELETE`, `PATCH` 등) 화이트리스트 검증 | `405 Method Not Allowed`<br>(`SEC-40501`) |
+| **7 (`25`)** | [`PayloadSizePolicyValidator`](src/main/java/com/example/security/validators/PayloadSizePolicyValidator.java) | `PAYLOAD_SIZE` | `maxPayloadSize` | `POST`/`PUT`/`PATCH` 요청의 `Content-Length`가 허용 크기(`"500KB"`, `"5MB"` 등, 기본 2MB)를 초과하는지 사전 검증 | `413 Payload Too Large`<br>(`SEC-41301`) |
+| **8 (`30`)** | [`ParamPolicyValidator`](src/main/java/com/example/security/validators/ParamPolicyValidator.java) | `PARAM` | `params`, `requiredParams`, `allowUndefinedParams` | 필수 파라미터, 미정의 파라미터 차단, Path Traversal(`CWE-22`), 최소/최대 글자 수, 타입 별칭 및 정규식 패턴 검증 | `400 Bad Request`<br>(`SEC-40001` ~ `SEC-40005`, `SEC-40007`) |
+| **9 (`35`)** | [`OpenRedirectPolicyValidator`](src/main/java/com/example/security/validators/OpenRedirectPolicyValidator.java) | `OPEN_REDIRECT` | `allowedRedirectDomains`, `allowRelativeRedirect`, `redirectParamNames`, `redirectUrl` | 리다이렉트 파라미터(`redirect`, `returnUrl` 등)의 외부 피싱 도메인 및 위험 스키마(`javascript:` 등) 차단 (`CWE-601`) | `400 Bad Request`<br>(`SEC-40010`) |
+| **10 (`40`)** | [`ResponsePolicyValidator`](src/main/java/com/example/security/validators/ResponsePolicyValidator.java) | `RESPONSE` | `responseType`, `defaultResponseType`, `callbackParam` | 클라이언트 `Accept` 헤더와 서블릿 응답 타입(`JSON`, `JSONP`, `HTML`) 호환성 및 `JSONP` 콜백 XSS 안전성 검증 | `406 Not Acceptable` (`SEC-40601`)<br>`400 Bad Request` (`SEC-40006`) |
+| **확장 (`100`)** | [`AbstractPolicyValidator`](src/main/java/com/example/security/validators/AbstractPolicyValidator.java) 상속 | 사용자 정의 | 사용자 정의 키 | `@Component(service = PolicyValidator.class)` 선언만으로 기존 코드 수정 없이 자동 등록 | 사용자 정의 (`SEC-XXXXX`) |
+
+---
+
+## 🔄 2. 필터 생명주기 및 요청 처리 흐름 (`activate` & `doFilter`)
 
 ```mermaid
 sequenceDiagram
@@ -40,184 +44,44 @@ sequenceDiagram
     participant Registry as EndpointPolicyRegistryImpl
     participant Filter as SecurityFilter
     participant Config as ServletSecurityConfig
+    participant Chain as PolicyValidator 체인 (Order 5~40)
     participant Servlet as 대상 서블릿
-    participant Chain as 3대 검증기 체인
 
-    Note over OSGi, Config: [Phase 1: 기동 및 전역 설정 로드 (activate)]
-    OSGi->>Filter: activate(Config config)
-    Filter->>Filter: 1. filterPattern 정규식 컴파일
-    Filter->>Config: 2. defaultPolicy (기본 정책) 생성 및 등록
-    Filter->>Config: 3. 전역 검증기 토글(Referer/Method/Param) 설정
-    Filter->>Config: 4. EndpointPolicyRegistry 정책과 defaultPolicy 동기화
+    Note over OSGi, Config: [Phase 1: 기동 및 동적 컴포넌트 바인딩]
+    OSGi->>Filter: bindValidator(PolicyValidator 1..N) -> getOrder() 오름차순 자동 정렬
+    OSGi->>Filter: activate(SecurityFilter.Config) -> defaultPolicy 생성
+    OSGi->>Registry: bindPolicyConfig(EndpointPolicyConfig~*.cfg.json)
+    Registry->>Filter: syncRegistryPolicies() 콜백 -> defaultPolicy 상속 및 O(1) 인덱싱
 
-    Note over OSGi, Filter: [Phase 2: 번들별 .cfg.json 동적 감지 (EndpointPolicyConfig)]
-    OSGi->>Registry: registerConfig(EndpointPolicyConfig~bundle.cfg.json)
-    Registry->>Filter: onPoliciesChanged() 콜백 호출
-    Filter->>Config: JSON 정책 파싱 + defaultPolicy 상속 후 동적 등록
-
-    Note over Client, Chain: [Phase 3: 실시간 요청 검증 (doFilter)]
+    Note over Client, Servlet: [Phase 2: 실시간 HTTP 요청 검증 (doFilter)]
     Client->>Filter: doFilter(request, response)
-    Filter->>Filter: 1. Bypass 조건 검사 (enabled? pattern 일치?)
-    Filter->>Config: 2. 요청 URI/ResourceType 매칭 정책 탐색 (evaluatePoliciesAndFindActive)
-    Config-->>Filter: matchedPolicy 반환 (없으면 defaultPolicy)
+    Filter->>Filter: 1. 필터 enabled 여부 및 sling.filter.pattern 정규식 매칭 확인
+    Filter->>Config: 2. findMatchingPolicy(request) (6단계 고속 탐색)
+    Config-->>Filter: matchedPolicy 반환 (enabled=false 이면 즉시 통과)
 
-    Filter->>Chain: 3. 검증기 체인 순차 실행 (getOrder() 오름차순: RunMode -> Referer -> Method -> Param)
-    Chain->>Chain: ① RunModePolicyValidator (인스턴스 RunMode 검증 -> 위반 시 403 SEC-40305)
-    Chain->>Chain: ② RefererPolicyValidator (도메인 검증 -> 위반 시 403 SEC-40303)
-    Chain->>Chain: ③ MethodPolicyValidator (HTTP 메서드 검증 -> 위반 시 405 SEC-40501)
-    Chain->>Chain: ④ ParamPolicyValidator (필수/길이/정규식/PathTraversal -> 위반 시 400 SEC-40001~7)
-
-    alt 모든 검증 통과 (PASS)
-        Chain-->>Filter: 검증 성공
-        Filter->>Servlet: chain.doFilter() 서블릿 실행
-    else 하나라도 위반 (Fail-Fast)
-        Chain-->>Filter: ValidationResult(FAIL, 에러코드)
-        Filter-->>Client: writeViolationResponse() JSON 차단 응답 즉시 반환
+    Filter->>Chain: 3. Validator 체인 순차 실행 (RUNMODE -> RATE_LIMIT -> REFERER -> AUTH -> CSRF -> METHOD -> PAYLOAD_SIZE -> PARAM -> OPEN_REDIRECT -> RESPONSE)
+    alt 모든 검증 통과 (또는 MONITOR 모드)
+        Chain-->>Filter: ValidationResult.ok() (MONITOR 모드 위반 시 WARN 감사 로그만 기록)
+        Filter->>Filter: [SECURITY PASS] 단일 디버그 로그 기록
+        Filter->>Servlet: chain.doFilter(request, response)
+    else ENFORCE 모드에서 정책 위반 발생 (Fail-Fast)
+        Chain-->>Filter: ValidationResult (valid=false, statusCode, subCode, blockedConfig)
+        Filter->>Filter: [SECURITY FAIL] 디버그 로그 + SECURITY VIOLATION BLOCKED 경고 로그 기록
+        Filter-->>Client: HTTP 상태 코드 및 표준 에러 JSON 응답 반환
     end
 ```
 
-### 2-1. 기동 및 설정 로드 관점 (`activate` & `EndpointPolicyRegistry`)
-OSGi 프레임워크가 컴포넌트를 활성화(`@Activate`)하거나 설정 변경(`@Modified`) 시 호출합니다:
-1. **필터 대상 패턴 사전 컴파일**: `config.sling_filter_pattern()`(기본값: `(/aemapi/.*|/sysapi/.*)`)을 `Pattern.compile()`로 메모리에 캐싱하여 런타임 정규식 컴파일 부하를 제거합니다.
-2. **전역 기본 정책(`defaultPolicy`) 생성**: `config`의 `default.*` 속성을 바탕으로 베이스라인 `ServletPolicyRule`을 생성합니다 (기본 도메인 `["abc.com"]`, 메서드 `GET, POST`, 공통 파라미터 `page, size, sort, keyword` 등).
-3. **번들별 `.cfg.json` 레지스트리 동기화 (`syncRegistryPolicies`)**: `EndpointPolicyRegistry`에 로드된 번들별 `EndpointPolicyConfig~<번들명>.cfg.json` 정책들에 `defaultPolicy`를 상속시켜 `ServletSecurityConfig`에 동기화합니다.
-
-### 2-2. 요청 가로채기 및 검증 관점 (`doFilter`)
-클라이언트로부터 실제 HTTP 요청이 들어왔을 때 필터 체인에서 매번 실행됩니다:
-1. **1차 필터링 및 건너뛰기 (Bypass)**:
-   - 필터 전역 비활성(`enabled=false`), 비 HTTP 요청, 또는 URI가 `sling.filter.pattern`과 매칭되지 않는 경우 보안 검사를 수행하지 않고 즉시 `chain.doFilter`로 통과시킵니다.
-2. **대상 정책 조회 및 판정 (`evaluatePoliciesAndFindActive`)**:
-   - `servletSecurityConfig.findMatchingPolicy(request)`를 통해 URI 및 Sling ResourceType과 일치하는 서블릿 정책을 조회합니다. 개별 정책이 없으면 `defaultPolicy`가 적용됩니다.
-   - 해당 정책이 비활성화(`enabled=false`)되어 있으면 보안 검사를 생략하고 통과합니다.
-3. **검증기 체인 순차 실행 (Fail-Fast 체인, `getOrder()` 순)**:
-   - **① `RunModePolicyValidator` (`order=5`)**: 허용/차단 RunMode 확인 (`403 Forbidden` / `SEC-40305`)
-   - **② `RefererPolicyValidator` (`order=10`)**: 신뢰 도메인 확인 (`403 Forbidden` / `SEC-40303`)
-   - **③ `MethodPolicyValidator` (`order=20`)**: 허용 HTTP Method 확인 (`405 Method Not Allowed` / `SEC-40501`)
-   - **④ `ParamPolicyValidator` (`order=30`)**: 필수값, 미정의 파라미터, 길이, 정규식, Path Traversal 검증 (`400 Bad Request` / `SEC-40001` ~ `SEC-40007`)
-4. **결과 처리**:
-   - **통과 시**: `chain.doFilter(request, response)`를 호출하여 대상 서블릿 비즈니스 로직을 정상 실행합니다.
-   - **위반 시**: 서블릿 실행을 즉각 중단하고, `writeViolationResponse`를 통해 규격화된 에러 JSON과 HTTP 상태 코드를 클라이언트에 즉시 응답합니다.
-
 ---
 
-## 🏛️ 3. 필터 핵심 데이터 구조 및 관계도 (Data Structures & Model)
+## 🏛️ 3. 핵심 아키텍처 특징 (Validator-Agnostic 설계)
 
-필터는 객체 간 명확한 계층 분리와 런타임 O(1) 고속 조회를 위해 체계적인 데이터 모델 구조를 가집니다:
-
-```mermaid
-classDiagram
-    direction TB
-
-    class SecurityFilter {
-        +boolean enabled
-        +String filterPattern
-        +Pattern compiledFilterPattern
-        +ServletSecurityConfig servletSecurityConfig
-        +EndpointPolicyRegistry policyRegistry
-        +List~PolicyValidator~ validators
-        +doFilter(request, response, chain)
-    }
-
-    class EndpointPolicyRegistryImpl {
-        +Map~String, List~ServletPolicyRule~~ bundleRulesMap
-        +Map~String, ServletPolicyRule~ mergedRulesMap
-        +registerConfig(config, properties)
-        +getPolicyRules() Map~String, ServletPolicyRule~
-    }
-
-    class ServletSecurityConfig {
-        +boolean enabled
-        +String defaultReferrer
-        +ServletPolicyRule defaultPolicy
-        +Map~String, ServletPolicyRule~ exactUriMap
-        +Map~String, ServletPolicyRule~ resourceTypeMap
-        +List~ServletPolicyRule~ patternPolicies
-        +Map~String, ServletPolicyRule~ policiesByTarget
-        +Map~String, Boolean~ validatorStatusMap
-        +findMatchingPolicy(request) ServletPolicyRule
-        +registerPolicy(rule)
-        +clearPolicies()
-    }
-
-    class ServletPolicyRule {
-        +String target
-        +Boolean enabled
-        +List~String~ methods
-        +Set~String~ upperMethods
-        +String defaultReferrer
-        +List~String~ allowedReferrers
-        +Boolean allowUndefinedParams
-        +Map~String, ParamRule~ params
-        +inheritFrom(defaultPolicy)
-        +matches(request) boolean
-    }
-
-    class ParamRule {
-        +String name
-        +Boolean required
-        +Integer minLength
-        +Integer maxLength
-        +String pattern
-        +Pattern compiledPattern
-        +String type
-        +Boolean allowPathTraversal
-        +validateValue(name, value) ValidationResult
-    }
-
-    class ValidationResult {
-        +boolean valid
-        +int statusCode
-        +String subCode
-        +String responseMessage
-        +String violationDetail
-        +String blockedConfig
-    }
-
-    SecurityFilter --> EndpointPolicyRegistryImpl : 번들별 .cfg.json 정책 구독
-    SecurityFilter --> ServletSecurityConfig : 보유 및 라이프사이클 관리
-    ServletSecurityConfig --> ServletPolicyRule : defaultPolicy (전역 기본 정책)
-    ServletSecurityConfig --> ServletPolicyRule : dynamicPolicies (.cfg.json 등록 정책)
-    ServletPolicyRule --> ParamRule : params (Map~파라미터명, ParamRule~)
-    ParamRule ..> ValidationResult : 검증 결과 반환
-```
-
-### 데이터 모델 계층 및 역할 명세
-
-| 계층 / 모델 클래스 | 역할 및 보유 데이터 | 데이터 원천 (Source) | 핵심 특징 |
-| :--- | :--- | :--- | :--- |
-| **`SecurityFilter`**<br>(루트 필터) | • 필터 전체 활성화 여부(`enabled`)<br>• 필터 정규식(`sling.filter.pattern`)<br>• 정책 레지스트리 참조(`policyRegistry`)<br>• 3대 검증기 인스턴스 체인 | OSGi Configuration Admin<br>(`SecurityFilter.config`) | Sling REQUEST 필터로서 모든 인입 요청의 진입점 역할을 수행하며, `EndpointPolicyRegistry`의 변경 알림을 수신 |
-| **`EndpointPolicyRegistry`**<br>(번들 정책 레지스트리) | • 번들별 정책 맵(`bundleRulesMap`)<br>• 병합된 타겟별 정책 맵(`mergedRulesMap`)<br>• 변경 콜백 리스너(`listeners`) | 번들별 `.cfg.json`<br>(`EndpointPolicyConfig~*.cfg.json`) | 각 번들의 `.cfg.json` 파일에 정의된 `policies` 배열을 파싱·수집하고 변경 시 `SecurityFilter`에 즉시 동기화 |
-| **`ServletSecurityConfig`**<br>(전체 정책 컨테이너) | • 전역 기본 정책(`defaultPolicy`)<br>• O(1) 고속 매칭 인덱스(`exactUriMap`, `resourceTypeMap`, `patternPolicies`)<br>• 검증기 On/Off 상태 맵 | `SecurityFilter.config` +<br>`EndpointPolicyRegistry` | 요청 인입 시 6단계 우선순위(URI 정확 일치 → Base URI → ResourceType → 정규식 패턴 → 경로 접두사 → DefaultPolicy)로 O(1) 고속 탐색 |
-| **`ServletPolicyRule`**<br>(타겟별 보안 정책) | • 타겟 식별자(`target`: 경로 또는 resourceType)<br>• 허용 HTTP 메서드 화이트리스트(`methods`)<br>• 허용 Referer 목록(`allowedReferrers`)<br>• 미정의 파라미터 허용 여부(`allowUndefinedParams`)<br>• 파라미터 검증 맵(`params`) | 번들별 `.cfg.json` 내<br>`policies` 배열 항목 | `inheritFrom(defaultPolicy)`를 통해 선언되지 않은 기본값 및 공통 파라미터(`default.params`)를 자동 상속/병합 |
-| **`ParamRule`**<br>(파라미터 검증 단위) | • 파라미터명(`name`)<br>• 필수 여부(`required`)<br>• 길이 제약(`minLength`, `maxLength`)<br>• 사전 컴파일된 정규식(`compiledPattern`)<br>• 타입 별칭(`digits`, `alnum`, `email` 등)<br>• 예외 플래그(`allowPathTraversal`) | `params` DSL 배열 | 인입 파라미터의 값 하나하나에 대해 타입, 길이, 정규식, PathTraversal 공격 구문을 정밀 검증 |
-| **`ValidationResult`**<br>(검증 결과 DTO) | • 검증 성공 여부(`valid`)<br>• HTTP 응답 상태 코드(`400`, `403`, `405`)<br>• 표준 에러 서브코드(`SEC-40001` ~ `SEC-40501`)<br>• 에러 메시지 및 상세 차단 원인(`BlockedByConfig`) | 각 `PolicyValidator` 검증 실행 시 반환 | 검증 실패 시 상위 필터로 차단 사유를 전달하여 즉각적인 Fail-Fast JSON 응답 생성 |
-
----
-
-### 데이터 상속 및 병합 (Inheritance & Merge) 구조
-
-번들별 `.cfg.json` 정책이 `EndpointPolicyRegistry`를 통해 로드될 때, **기본 정책(`defaultPolicy`)과 서블릿 개별 정책(`rule`)의 데이터는 다음과 같이 합성(Merge)**됩니다:
-
-```text
-[OSGi 전역 설정: SecurityFilter.config]
-  └─ defaultPolicy (ServletPolicyRule)
-       ├─ methods = [GET, POST]
-       ├─ defaultReferrer = "abc.com"
-       ├─ allowUndefinedParams = false
-       └─ params = {page: ParamRule, size: ParamRule, sort: ParamRule, ...}
-            │
-            │  inheritFrom(defaultPolicy) 자동 상속
-            ▼
-[번들별 .cfg.json: EndpointPolicyConfig~core-member.cfg.json]
-  └─ 서블릿 정책 (ServletPolicyRule: target="/aemapi/user/contact")
-       ├─ methods = [POST]                   <-- .cfg.json 설정으로 재정의 (Override)
-       ├─ defaultReferrer = "abc.com"        <-- defaultPolicy 값 상속
-       ├─ allowUndefinedParams = false       <-- defaultPolicy 값 상속
-       └─ params = {
-            page: ParamRule, size: ParamRule <-- defaultPolicy의 기본 파라미터 자동 상속!
-            name: ParamRule, email: ...      <-- 서블릿 전용 파라미터 규칙 추가/병합!
-          }
-```
+1. **`ServletPolicyRule`의 순수 컨테이너화 ([ServletPolicyRule.java](src/main/java/com/example/security/models/ServletPolicyRule.java))**
+   * `ServletPolicyRule`은 특정 Validator에 종속된 필드를 가지지 않고 오직 **`target`, `enabled`, `mode`, `extensions` 4가지 공통 필드**만 보유합니다.
+   * `.cfg.json`에 작성된 모든 검증기 설정(`methods`, `allowedReferrers`, `params`, `runModes`, `auth`, `roles`, `csrf`, `rateLimit`, `maxPayloadSize`, `allowedRedirectDomains`, `responseType` 등)은 자동으로 `extensions` 맵에 수집·상속되며, 각 Validator가 자기 책임하에 꺼내어 해석합니다.
+2. **전역/서블릿별 실행 모드 (`ENFORCE` vs `MONITOR`) 및 개별 서블릿 `enabled` 제어**
+   * **전역 `mode="MONITOR"` (`SecurityFilter.config`)**: 모든 서블릿에서 위반이 발생해도 요청을 차단하지 않고 `SECURITY VIOLATION MONITORED` 경고 로그만 남긴 뒤 통과시킵니다 (운영 초기 정책 영향도 파악용).
+   * **개별 서블릿 `"mode": "MONITOR"` (`.cfg.json`)**: 전역 모드가 `ENFORCE`이더라도 해당 서블릿만 로그 전용 모드로 동작합니다.
+   * **개별 서블릿 `"enabled": false` (`.cfg.json`)**: 해당 서블릿은 `defaultPolicy`를 포함한 모든 보안 검증을 건너뜁니다(Bypass).
 
 ---
 
@@ -225,9 +89,13 @@ classDiagram
 
 ```ini
 enabled=B"true"
+# 전역 보안 실행 모드 (ENFORCE: 위반 시 즉시 차단, MONITOR: 위반 시 WARN 로그만 남기고 통과)
 mode="ENFORCE"
 sling.filter.pattern="(/aemapi/.*|/sysapi/.*)"
 
+# 기본 정책(defaultPolicy) 활성화 여부
+# - true: .cfg.json에 정의되지 않은 서블릿도 아래 default.* 규칙으로 기본 검증 수행
+# - false: .cfg.json에 등록된 서블릿만(default.* 속성을 상속받아) 검증하고, 미등록 서블릿은 통과
 default.enabled=B"true"
 default.runModes=[]
 default.referrers=["abc.com"]
@@ -245,92 +113,329 @@ default.params=[ \
 
 ---
 
-## 🧩 5. 번들별 `.cfg.json` (`EndpointPolicyConfig`) 및 파라미터(`params`) 설정 가이드
+## 🧩 5. 10대 내장 Validator별 상세 적용 예제 및 다양한 케이스 (`.cfg.json` & 샘플 코드)
 
-서블릿 클래스(`@Component`)에는 순수 Sling 라우팅 프로퍼티(`sling.servlet.paths`, `sling.servlet.methods` 등)만 선언하고, 모든 보안 정책은 `config/com.example.security.registry.EndpointPolicyConfig~<번들명>.cfg.json` 파일의 `policies` 배열에서 관리합니다.  
-`params` 배열 안에서는 콜론(`:`) 구분자 기반의 간편 DSL 문법(`"파라미터명:필수여부:타입또는패턴:길이"`)으로 검증 규칙을 선언합니다. 토큰 순서는 첫 번째 `파라미터명`만 고정이며, 나머지 토큰(`required`, `타입`, `길이`)은 순서에 관계없이 자유롭게 조합할 수 있습니다.
+모든 서블릿 보안 정책은 `config/com.example.security.registry.EndpointPolicyConfig~<번들명>.cfg.json` 파일의 `policies` 배열에서 선언적으로 관리합니다.
 
 ---
 
-### Case 1. 번들별 `.cfg.json` 기본 구조 (`EndpointPolicyConfig~<번들명>.cfg.json`)
+### 5-1. `RunModePolicyValidator` (`order = 5`, 에러 코드: `403 SEC-40305`)
 
-하나의 `.cfg.json` 파일 안에 여러 서블릿 경로(`target`)의 정책 객체를 배열(`policies`) 형태로 선언합니다:
+현재 AEM 인스턴스의 RunMode(`author`, `publish`, `dev`, `stage`, `prod` 등)를 확인하여 특정 환경에서만 서블릿 실행을 허용하거나 차단합니다.
+* **`runModes`** (또는 `allowedRunModes`): 지정된 RunMode 중 **최소 1개 이상**이 현재 인스턴스 RunMode와 일치해야 통과합니다.
+* **`blockedRunModes`**: 지정된 RunMode 중 **하나라도** 현재 인스턴스 RunMode에 포함되면(`runModes` 일치 여부와 무관하게) 최우선으로 차단합니다.
 
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
 ```json
 {
   "enabled": true,
-  "bundle.id": "core-member",
+  "bundle.id": "core-ops",
   "policies": [
     {
-      "target": "/aemapi/user/contact",
+      "target": "/aemapi/admin/reindex",
+      "runModes": ["author", "dev"],
+      "blockedRunModes": ["publish", "prod"],
+      "methods": ["POST"]
+    },
+    {
+      "target": "/aemapi/debug/env-dump",
+      "runModes": ["dev"],
+      "methods": ["GET"]
+    },
+    {
+      "target": "/aemapi/event/live-draw",
+      "runModes": ["publish"],
+      "methods": ["POST"]
+    }
+  ]
+}
+```
+* **케이스 1 (`/aemapi/admin/reindex`)**: 로컬/개발 `author`에서는 허용되지만, 운영(`prod`) Author나 모든 `publish` 인스턴스에서는 `403 SEC-40305`로 즉시 차단됩니다.
+* **케이스 2 (`/aemapi/debug/env-dump`)**: 오직 `dev` RunMode에서만 호출 가능합니다.
+* **케이스 3 (`/aemapi/event/live-draw`)**: 대고객 `publish` 인스턴스에서만 호출 가능합니다.
+
+---
+
+### 5-2. `RateLimitPolicyValidator` (`order = 8`, 에러 코드: `429 SEC-42901`)
+
+슬라이딩 윈도우(Sliding Window) 알고리즘으로 단시간 내 과도한 요청(DoS, OTP 폭탄, 브루트포스 공격)을 차단합니다.
+* **`rateLimit`**: 윈도우 시간 내 최대 허용 요청 횟수 (미설정 또는 `0` 이하 시 비활성화)
+* **`rateLimitWindow`**: 측정 윈도우 시간(초 단위, 생략 시 기본값 `60`초)
+* **`rateLimitKey`**: 카운팅 버킷 구분 기준 (생략 시 기본값 `"IP"`)
+  * `"IP"`: 클라이언트 IP 주소 단위로 카운팅
+  * `"IP_TARGET"`: `클라이언트 IP + 서블릿 타겟 경로` 조합 단위로 카운팅 (가장 많이 사용)
+  * `"USER"`: 로그인된 사용자 ID(`request.getRemoteUser()`) + 타겟 경로 단위로 카운팅 (비로그인 시 IP+타겟으로 자동 폴백)
+
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-security",
+  "policies": [
+    {
+      "target": "/aemapi/auth/send-otp",
       "methods": ["POST"],
-      "allowedReferrers": ["partner.abc.com"],
-      "allowUndefinedParams": false,
+      "rateLimit": 3,
+      "rateLimitWindow": 60,
+      "rateLimitKey": "IP_TARGET",
       "params": [
-        "name:required:korean:2..20",
-        "email:required:email:50",
-        "phone:optional:phone",
-        "category:required:inquiry|bug|feedback|other:15",
-        "message:required:10..500",
-        "attachmentPath:optional:200:allowPathTraversal"
+        "mobile:required:phone"
       ]
     },
     {
-      "target": "/aemapi/user/profile",
+      "target": "/aemapi/member/point-transfer",
+      "methods": ["POST"],
+      "rateLimit": 10,
+      "rateLimitWindow": 60,
+      "rateLimitKey": "USER"
+    },
+    {
+      "target": "/aemapi/search/heavy-catalog",
       "methods": ["GET"],
+      "rateLimit": 30,
+      "rateLimitWindow": 10,
+      "rateLimitKey": "IP"
+    }
+  ]
+}
+```
+* **케이스 1 (SMS OTP 발송 제한)**: 동일 IP에서 `/aemapi/auth/send-otp`를 60초 동안 최대 3회까지만 호출 가능하며, 4번째 요청부터는 `429 Too Many Requests` (`SEC-42901`, `"Retry after N seconds"`)를 반환합니다.
+* **케이스 2 (로그인 사용자별 호출 제한)**: 공인 IP(사내망/공유기)를 여러 명이 공유하더라도 로그인한 계정(`USER`)별로 분당 10회씩 독립적으로 제한합니다.
+
+---
+
+### 5-3. `RefererPolicyValidator` (`order = 10`, 에러 코드: `403 SEC-40303`)
+
+요청의 `Referer` 헤더(없을 경우 `Origin` 헤더 대체 사용)에서 호스트명을 추출해 신뢰할 수 있는 도메인에서 발생한 요청인지 검증합니다.
+* **`allowedReferrers`**: 허용할 도메인 배열. `SecurityFilter.config`의 `default.referrers`(예: `["abc.com"]`)와 **자동 합집합(Merge)** 으로 병합됩니다.
+* 도메인 매칭은 서브도메인을 자동 지원합니다 (예: `"abc.com"` 또는 `"*.abc.com"` 설정 시 `abc.com`, `www.abc.com`, `shop.abc.com` 모두 허용하되 `evil-abc.com`은 차단).
+
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "target": "/aemapi/partner/order-webhook",
+  "methods": ["POST"],
+  "allowedReferrers": [
+    "partner.co.kr",
+    "*.payment-gateway.com"
+  ]
+}
+```
+* 기본 도메인(`abc.com`, `*.abc.com`)에 더해 `partner.co.kr` 및 `pay.payment-gateway.com`에서 유입된 요청까지 허용합니다. `Referer`와 `Origin` 헤더가 모두 없거나 타 도메인이면 `403 SEC-40303`으로 차단됩니다.
+
+---
+
+### 5-4. `AuthPolicyValidator` (`order = 12`, 에러 코드: `401 SEC-40101` / `403 SEC-40301`, `SEC-40302`)
+
+요청 사용자의 **인증 유형(`auth`)** 과 **AEM 사용자 그룹/역할(`roles`)** 을 검증합니다.
+
+#### 지원되는 4가지 `auth` 타입
+| `auth` 설정값 | 의미 및 판별 기준 |
+| :---: | :--- |
+| **`"ANONYMOUS"`** | 비로그인 익명 사용자 (`userId == null` 또는 `"anonymous"`) |
+| **`"SA_USER"`** | 일반 대고객 로그인 사용자 (AEM 내부 작성자나 시스템 계정이 아닌 인증된 외부/멤버십 사용자) |
+| **`"AEM_USER"`** | AEM 내부 작성자 및 관리자 (`admin`, `/home/users/aem` 또는 `/home/users/mac` 경로 사용자, `administrators`/`authors`/`content-authors`/`contributor` 그룹 소속, 또는 `aem-`/`author-` 접두사 계정) |
+| **`"SYSTEM"`** | AEM 시스템 서비스 계정 (`User.isSystemUser() == true`, `/home/users/system` 경로, 또는 `system`/`service-` 접두사 계정) |
+
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-auth-examples",
+  "policies": [
+    {
+      "target": "/aemapi/admin/user-audit",
+      "auth": "AEM_USER",
+      "roles": ["administrators", "security-auditors"],
+      "methods": ["GET"]
+    },
+    {
+      "target": "/aemapi/mypage/order-list",
+      "auth": "SA_USER",
+      "methods": ["GET"]
+    },
+    {
+      "target": "/sysapi/sap/erp-sync",
+      "auth": "SYSTEM",
+      "methods": ["POST"]
+    },
+    {
+      "target": "/aemapi/content/approve",
+      "roles": ["content-approvers", "administrators"],
+      "methods": ["POST"]
+    }
+  ]
+}
+```
+* **케이스 1 (`auth` + `roles` 동시 검증)**:
+  * 비로그인 사용자가 요청 시 → `401 Unauthorized` (`SEC-40101`)
+  * 일반 고객(`SA_USER`)이 요청 시 → `403 Forbidden` (`SEC-40301`, `"Forbidden: Access denied for auth type: SA_USER"`)
+  * `AEM_USER`이지만 `administrators`나 `security-auditors` 그룹에 속하지 않은 경우 → `403 Forbidden` (`SEC-40302`, `"Forbidden: Insufficient role permissions"`)
+* **케이스 2 (`SA_USER` 전용)**: 일반 로그인 고객만 접근 가능하며 비로그인 시 `401 SEC-40101`이 반환됩니다.
+* **케이스 3 (`SYSTEM` 계정 전용)**: 내부 시스템 연동 서비스 계정만 호출할 수 있습니다.
+* **케이스 4 (`roles`만 단독 지정)**: `auth` 구분 없이 로그인된 사용자가 JCR `UserManager`(또는 `request.isUserInRole()`) 기준 `content-approvers` 또는 `administrators` 그룹에 속해 있으면 통과합니다.
+
+---
+
+### 5-5. `CsrfPolicyValidator` (`order = 15`, 에러 코드: `403 SEC-40304`, `SEC-40306` ~ `SEC-40310`)
+
+상태를 변경하는 요청에 대해 3가지 모드의 CSRF(사이트 간 요청 위조) 토큰 검증을 지원합니다.
+
+| `csrf` 설정값 | 검증 방식 | 요청에서 찾는 토큰 위치 | 서버 대조 기준 및 위반 코드 |
+| :---: | :--- | :--- | :--- |
+| **`"NONE"`** | CSRF 검증 생략 (기본값) | - | - |
+| **`"TOKEN"`** | 표준 일반 CSRF 토큰 검증 (Double Submit Cookie / Synchronizer Token 패턴) | **헤더**: `X-CSRF-Token`, `CSRF-Token`, `X-XSRF-TOKEN`<br>**파라미터**: `_csrf`, `csrf_token`, `csrfToken`, `:cq_csrf_token`, `token` | **세션 속성**(`CSRF_TOKEN`, `csrfToken`, `_csrf`, `X-CSRF-Token`) 또는 **쿠키**(`CSRF-TOKEN`, `XSRF-TOKEN`, `csrf_token`)와 상수 시간(`MessageDigest.isEqual`) 비교<br>• 토큰 누락: `SEC-40304`<br>• 불일치/세션 만료: `SEC-40306` |
+| **`"GRANITE"`** | Adobe Granite (`com.adobe.granite.csrf.impl.CSRFTokenService`) 호환 검증 | **헤더**: `CSRF-Token`<br>**파라미터**: `:cq_csrf_token` | OSGi `CSRFTokenService`가 바인딩되어 있으면 서비스로 검증하고, 없으면 토큰 형식(8자 이상, 공백/개행 미포함)을 검증<br>• 토큰 누락: `SEC-40309`<br>• 유효하지 않은 토큰: `SEC-40310` |
+| **`"OAUTH_STATE"`** | OAuth 2.0 / OIDC 로그인 콜백의 `state` 파라미터 위변조 검증 | **파라미터**: `state` | **세션 속성**(`OAUTH_STATE`, `oauth_state`, `state`) 또는 **쿠키**(`OAUTH_STATE`, `oauth_state`)와 상수 시간 비교<br>• `state` 파라미터 누락: `SEC-40307`<br>• 세션/쿠키 불일치: `SEC-40308` |
+
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-csrf-examples",
+  "policies": [
+    {
+      "target": "/aemapi/member/password-change",
+      "methods": ["POST"],
+      "csrf": "TOKEN"
+    },
+    {
+      "target": "/aemapi/authoring/page-lock",
+      "methods": ["POST"],
+      "csrf": "GRANITE"
+    },
+    {
+      "target": "/aemapi/oauth/callback",
+      "methods": ["GET", "POST"],
+      "csrf": "OAUTH_STATE",
       "params": [
-        "memberId:required:alnum:4..20"
+        "code:required:200",
+        "state:required:100"
       ]
     }
   ]
 }
 ```
 
+#### 💻 클라이언트 연동 샘플 코드
+```javascript
+// 1. csrf="TOKEN" 설정 서블릿 호출 예시 (세션 또는 XSRF-TOKEN 쿠키와 일치하는 헤더 전송)
+fetch('/aemapi/member/password-change', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'X-CSRF-Token': sessionStorage.getItem('CSRF_TOKEN')
+  },
+  body: new URLSearchParams({ currentPwd: '...', newPwd: '...' })
+});
+
+// 2. csrf="GRANITE" 설정 서블릿 호출 예시 (AEM @granite/csrf 토큰 연동)
+const tokenResp = await fetch('/libs/granite/csrf/token.json');
+const { token } = await tokenResp.json();
+await fetch('/aemapi/authoring/page-lock', {
+  method: 'POST',
+  headers: { 'CSRF-Token': token }
+});
+```
+
 ---
 
-### Case 2. 글자 수 / 길이 제한 (`minLength`, `maxLength`) 설정 케이스
+### 5-6. `MethodPolicyValidator` (`order = 20`, 에러 코드: `405 SEC-40501`)
 
-| 세부 케이스 | `.cfg.json` 내 `params` 항목 예시 | 동작 설명 (`ParamRule`) | 위반 시 에러 코드 |
-| :--- | :--- | :--- | :---: |
-| **① 최소~최대 길이 동시 지정 (`min..max`)** | `"userId:required:alnum:4..20"` | 4자 이상 ~ 20자 이하 (`minLength=4, maxLength=20`) | 4자 미만: `SEC-40003`<br>20자 초과: `SEC-40004` |
-| **② 최대 길이만 지정 (`숫자` 또는 `max:숫자`)** | `"title:required:50"`<br>`"title:required:max:50"` | 최소 길이 제한 없음, 최대 50자 이하 (`minLength=null, maxLength=50`) | 50자 초과: `SEC-40004` |
-| **③ 최소 길이만 지정 (`min:숫자`)** | `"feedback:required:min:10"` | 최소 10자 이상, 최대 길이 제한 없음 (`minLength=10, maxLength=null`) | 10자 미만: `SEC-40003` |
-| **④ 패턴 없이 길이만 제한 (자유 텍스트)** | `"message:required:10..500"`<br>`"keyword:optional:100"` | 정규식(`pattern`) 없이 글자 수만 제한 (단, PathTraversal은 기본 차단됨) | `SEC-40003` / `SEC-40004` |
-| **⑤ 길이 지정 생략 (`min/maxLength` 미지정)** | `"deptCode:required:alpha"` | `minLength=null, maxLength=null`로 길이 검사를 생략하고 영문자 정규식만 검사 | 형식 불일치: `SEC-40005` |
+서블릿별로 허용된 HTTP 메서드(`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`)만 통과시킵니다. `.cfg.json`에 `methods`를 생략하면 `SecurityFilter.config`의 `default.methods`(기본 `["GET", "POST"]`)를 자동 상속받습니다.
+
+```json
+{
+  "target": "/aemapi/order/cancel",
+  "methods": ["POST"]
+}
+```
+* `GET /aemapi/order/cancel` 또는 `DELETE /aemapi/order/cancel` 요청 시 `405 Method Not Allowed` (`SEC-40501`)로 차단됩니다.
 
 ---
 
-### Case 3. 내장 타입 별칭(Type Alias) 활용 케이스
+### 5-7. `PayloadSizePolicyValidator` (`order = 25`, 에러 코드: `413 SEC-41301`)
 
-정규식을 직접 작성하지 않고 내장 키워드만 적어도 자동으로 검증 정규식이 적용됩니다. 규격 길이가 정해진 일부 타입(`email`, `phone`, `date` 등)은 길이를 생략해도 기본 `maxLength`가 자동 적용되며, 별도 길이를 적으면 적은 값이 우선합니다.
+`POST`, `PUT`, `PATCH` 요청의 본문(Stream)을 서블릿이 읽어 메모리에 적재하기 전에 `Content-Length` 헤더를 검사하여 대용량 페이로드 공격(`CWE-400` / `CWE-770`)을 즉시 차단합니다.
+* **`maxPayloadSize`**: 바이트 숫자(`1048576`) 또는 단위 문자열(`"512B"`, `"100KB"`, `"5MB"`, `"1GB"`) 모두 지원합니다. (미설정 시 기본값 **2MB** 적용)
 
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-payload",
+  "policies": [
+    {
+      "target": "/aemapi/comment/write",
+      "methods": ["POST"],
+      "maxPayloadSize": "64KB"
+    },
+    {
+      "target": "/aemapi/voc/attachment-upload",
+      "methods": ["POST"],
+      "maxPayloadSize": "20MB"
+    }
+  ]
+}
+```
+* `/aemapi/comment/write`에 64KB(65,536 bytes)를 초과하는 본문이 유입되면 `413 Payload Too Large` (`SEC-41301`)가 반환됩니다.
+
+---
+
+### 5-8. `ParamPolicyValidator` (`order = 30`, 에러 코드: `400 SEC-40001` ~ `SEC-40005`, `SEC-40007`)
+
+요청 파라미터에 대해 **① 필수 파라미터 누락(`SEC-40001`), ② 미정의 파라미터 유입(`SEC-40002`), ③ Path Traversal 공격(`SEC-40007`), ④ 최소 길이 미달(`SEC-40003`), ⑤ 최대 길이 초과(`SEC-40004`), ⑥ 타입/정규식 불일치(`SEC-40005`)** 를 한 번에 검증합니다.
+
+#### Case A. 간편 DSL 문법, JSON 객체 배열, `requiredParams` 조합
 ```json
 {
   "target": "/aemapi/member/register",
   "methods": ["POST"],
+  "allowUndefinedParams": false,
   "params": [
-    "age:optional:digits:3",
     "memberId:required:alnum:4..20",
-    "countryCode:optional:alpha:2",
     "userName:required:korean:2..20",
     "email:required:email:50",
     "mobile:required:phone",
     "birthDate:optional:date",
-    "reservedAt:optional:datetime",
-    "requestId:optional:uuid",
-    "zip:optional:zipcode",
-    "clientIp:optional:ip",
-    "homepage:optional:url:200"
+    "grade:required:VIP|GOLD|SILVER:10",
+    "couponCode:optional:pattern(^CPN-[A-Z0-9]{4}-[A-Z0-9]{4}$):15",
+    "memo:optional:200",
+    "attachmentPath:optional:200:allowPathTraversal"
+  ],
+  "requiredParams": ["agreeTerms"]
+}
+```
+
+#### Case B. JSON 객체 배열 방식 (`params` 내 상세 객체 정의)
+```json
+{
+  "target": "/aemapi/account/verify",
+  "methods": ["POST"],
+  "params": [
+    {
+      "name": "accountNo",
+      "required": true,
+      "minLength": 10,
+      "maxLength": 14,
+      "type": "digits"
+    },
+    {
+      "name": "bankCode",
+      "required": true,
+      "pattern": "^[0-9]{3}$"
+    }
   ]
 }
 ```
 
-| 내장 타입 키워드 | 자동 변환되는 정규식 (`pattern`) | 길이 생략 시 기본 `maxLength` |
+#### 내장 타입 별칭(Type Alias) 13종 요약
+| 타입 키워드 | 자동 적용되는 정규식 (`pattern`) | 기본 `maxLength` |
 | :--- | :--- | :---: |
-| `digits` / `number` / `numeric` | `^[0-9]+$` | `null` (제한 없음) |
-| `alnum` / `alphanumeric` | `^[a-zA-Z0-9_]+$` | `null` (제한 없음) |
-| `alpha` | `^[a-zA-Z]+$` | `null` (제한 없음) |
-| `korean` / `hangul` | `^[가-힣a-zA-Z\s]+$` | `null` (제한 없음) |
+| `digits` / `number` / `numeric` | `^[0-9]+$` | 제한 없음 |
+| `alnum` / `alphanumeric` | `^[a-zA-Z0-9_]+$` | 제한 없음 |
+| `alpha` | `^[a-zA-Z]+$` | 제한 없음 |
+| `korean` / `hangul` | `^[가-힣a-zA-Z\s]+$` | 제한 없음 |
 | `email` | `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$` | `100` |
 | `phone` | `^01[016789]-?\d{3,4}-?\d{4}$` | `13` |
 | `date` | `^\d{4}-\d{2}-\d{2}$` | `10` |
@@ -339,191 +444,232 @@ default.params=[ \
 | `uuid` | `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$` | `36` |
 | `zipcode` / `postal` | `^\d{5}$` | `5` |
 | `ip` / `ipv4` | IPv4 주소 정규식 | `15` |
-| `url` | `^https?://[a-zA-Z0-9.-]+(?:\.[a-zA-Z]{2,})+(?:/[^\s<>"]*)?$` | `null` (제한 없음) |
+| `url` | `^https?://[a-zA-Z0-9.-]+(?:\.[a-zA-Z]{2,})+(?:/[^\s<>"]*)?$` | 제한 없음 |
 
 ---
 
-### Case 4. 허용값 목록(Enum) 및 커스텀 정규식(`pattern(...)`) 케이스
+### 5-9. `OpenRedirectPolicyValidator` (`order = 35`, 에러 코드: `400 SEC-40010`)
 
-정해진 코드값만 허용하거나 프로젝트 고유의 포맷(주문번호, 쿠폰코드 등)을 정규식으로 검증할 때 사용합니다.  
-정규식 내부에 콜론(`:`)이나 괄호(`(?:...)`)가 포함되어 있어도 `splitPreservingParens` 파서가 괄호 깊이를 계산하여 안전하게 파싱합니다.
+로그인이나 외부 연동 후 리다이렉트 URL을 받는 파라미터에서 악성 피싱 사이트(`https://evil.com`), 프로토콜 상대 경로(`//evil.com`),危险 스키마(`javascript:alert(1)`), UserInfo 우회(`https://abc.com@evil.com`), CRLF 인젝션을 차단합니다 (`CWE-601`).
+* **기본 검사 대상 파라미터**: `redirect`, `redirect_to`, `returnurl`, `targeturl`, `url`, `dest`, `continue`, `next`, `goto`
+* **`redirectParamNames`**: 기본 9개 파라미터 외에 추가로 검사할 커스텀 파라미터명 목록
+* **`allowedRedirectDomains`**: 리다이렉트를 허용할 외부 도메인 화이트리스트 (미지정 시 서블릿 및 기본 정책의 `allowedReferrers` 도메인을 신뢰 도메인으로 사용)
+* **`allowRelativeRedirect`**: `/content/abc/ko.html` 같은 내부 상대 경로 허용 여부 (기본값: `true`)
+
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-redirect",
+  "policies": [
+    {
+      "target": "/aemapi/auth/sso-login",
+      "methods": ["GET", "POST"],
+      "allowedRedirectDomains": [
+        "*.abc.com",
+        "member.partner.com"
+      ],
+      "allowRelativeRedirect": true,
+      "allowUndefinedParams": true
+    },
+    {
+      "target": "/aemapi/external/partner-jump",
+      "methods": ["GET"],
+      "redirectParamNames": ["jumpToUrl"],
+      "allowedRedirectDomains": ["official.partner.com"],
+      "allowRelativeRedirect": false,
+      "params": [
+        "jumpToUrl:required:200"
+      ]
+    }
+  ]
+}
+```
+* **케이스 1 (`/aemapi/auth/sso-login`)**:
+  * `?redirect=/content/abc/home.html` (내부 상대 경로) → **통과**
+  * `?redirect=https://shop.abc.com/cart` (허용 서브도메인) → **통과**
+  * `?redirect=https://evil.com` 또는 `?redirect=//evil.com` 또는 `?redirect=javascript:alert(1)` → **`400 SEC-40010` 차단**
+* **케이스 2 (`/aemapi/external/partner-jump`)**: 커스텀 파라미터 `jumpToUrl`까지 검사하며, `"allowRelativeRedirect": false`이므로 오직 `https://official.partner.com/...` 절대 URL만 허용됩니다.
+
+---
+
+### 5-10. `ResponsePolicyValidator` (`order = 40`, 에러 코드: `406 SEC-40601` / `400 SEC-40006`)
+
+서블릿의 응답 형식(`responseType`)과 클라이언트의 `Accept` 헤더가 호환되는지 사전 검증하고, `JSONP` 응답인 경우 콜백 함수명 파라미터를 통한 XSS 스크립트 주입을 방어합니다.
+* **`responseType`**: `"JSON"`, `"JSONP"`, `"HTML"`, `"FILE"`, `"REDIRECT"`, `"DEFAULT"` (미설정 시 `"DEFAULT"`로 통과)
+* **`callbackParam`**: `responseType="JSONP"`일 때 검사할 콜백 파라미터 이름 (생략 시 기본값 `"callback"`)
+
+#### ✅ 다양한 적용 케이스 (`.cfg.json`)
+```json
+{
+  "enabled": true,
+  "bundle.id": "core-response",
+  "policies": [
+    {
+      "target": "/aemapi/catalog/products",
+      "methods": ["GET"],
+      "responseType": "JSON"
+    },
+    {
+      "target": "/aemapi/legacy/jsonp-ticker",
+      "methods": ["GET"],
+      "responseType": "JSONP",
+      "callbackParam": "cb",
+      "allowUndefinedParams": true
+    }
+  ]
+}
+```
+* **케이스 1 (`responseType="JSON"`)**: 클라이언트가 `Accept: text/html` 헤더로 요청하면 `406 Not Acceptable` (`SEC-40601`)로 차단하고, `Accept: application/json` 또는 `*/*`이면 통과합니다.
+* **케이스 2 (`responseType="JSONP"`)**:
+  * `?cb=jQuery123_456` → 유효한 JS 식별자(`^[a-zA-Z_$][a-zA-Z0-9_$.]*$`)이므로 **통과**
+  * `?cb=` (누락) → `400 SEC-40001` 차단
+  * `?cb=<script>alert(1)</script>` → **`400 SEC-40006` (`RESPONSE_TYPE_JSONP_INVALID`) 차단**
+
+---
+
+## 🚀 6. 복합 실전 시나리오 (10대 Validator 종합 `.cfg.json` & 서블릿 샘플)
+
+실제 운영 프로젝트에서 여러 Validator 규칙을 하나의 서블릿 정책에 조합하여 적용하는 종합 예제입니다:
 
 ```json
 {
-  "target": "/aemapi/coupon/issue",
-  "methods": ["POST"],
-  "params": [
-    "grade:required:VIP|GOLD|SILVER:10",
-    "sortOrder:optional:asc|desc:4",
-    "couponCode:required:pattern(^CPN-[A-Z0-9]{4}-[A-Z0-9]{4}$):15",
-    "locale:optional:pattern(^[a-z]{2}(?:-[A-Z]{2})?$):5"
+  "enabled": true,
+  "bundle.id": "core-commerce",
+  "policies": [
+    {
+      "target": "/aemapi/order/checkout",
+      "enabled": true,
+      "mode": "ENFORCE",
+      "runModes": ["publish", "dev", "stage", "prod"],
+      "rateLimit": 10,
+      "rateLimitWindow": 60,
+      "rateLimitKey": "USER",
+      "allowedReferrers": ["shop.abc.com", "m.abc.com"],
+      "auth": "SA_USER",
+      "csrf": "TOKEN",
+      "methods": ["POST"],
+      "maxPayloadSize": "256KB",
+      "allowUndefinedParams": false,
+      "params": [
+        "orderId:required:alnum:8..20",
+        "paymentMethod:required:CARD|BANK|POINT:10",
+        "receiverPhone:required:phone",
+        "zipCode:required:zipcode",
+        "deliveryMemo:optional:100",
+        "returnUrl:optional:200"
+      ],
+      "allowedRedirectDomains": ["*.abc.com"],
+      "responseType": "JSON"
+    }
   ]
 }
 ```
 
----
+### 대상 서블릿 자바 코드 샘플 ([UserContactServlet.java](src/main/java/com/example/security/servlets/UserContactServlet.java))
+서블릿 클래스에는 보안 검증 코드가 단 한 줄도 필요 없으며, 순수 비즈니스 로직만 작성합니다:
 
-### Case 5. 미정의 파라미터 허용(`allowUndefinedParams`) 및 기본 정책(`default.params`) 상속 케이스
+```java
+@Component(
+        service = { Servlet.class },
+        property = {
+                "sling.servlet.paths=/aemapi/user/contact",
+                "sling.servlet.methods=POST",
+                "service.description=User Contact Inquiry Servlet"
+        }
+)
+public class UserContactServlet extends SlingAllMethodsServlet {
 
-1. **기본 정책(`default.params`) 자동 상속**:
-   - `.cfg.json`의 `params`에 `page`, `size`, `sort`, `order`, `lang`, `keyword`를 따로 적지 않아도 `SecurityFilter.config`의 `default.params`가 자동 상속되므로 페이징·정렬 파라미터를 바로 사용할 수 있습니다.
-   - 만약 특정 정책에서 `"keyword:required:2..50"`을 선언하면 기본 정책의 `keyword:optional:100` 대신 **해당 정책에 선언한 규칙이 우선 적용(Override)**됩니다.
-2. **정의되지 않은 파라미터 허용 (`"allowUndefinedParams": true`)**:
-   - 기본값은 `false`(화이트리스트에 없는 파라미터가 1개라도 들어오면 `SEC-40002` 차단)입니다.
-   - 외부 웹훅 수신이나 가변 파라미터를 받는 엔드포인트의 경우 `"allowUndefinedParams": true`로 설정하면 미정의 파라미터도 허용하되, **유입되는 모든 미정의 파라미터 값에 대해서도 Path Traversal 검사는 자동으로 수행**하여 안전하게 보호합니다:
-   ```json
-   {
-     "target": "/aemapi/webhook/callback",
-     "methods": ["POST"],
-     "allowUndefinedParams": true,
-     "params": [
-       "signature:required:64"
-     ]
-   }
-   ```
+    @Override
+    protected void doPost(final SlingHttpServletRequest request, final SlingHttpServletResponse response)
+            throws ServletException, IOException {
+        // SecurityFilter의 10대 Validator 체인을 모두 통과한 안전한 요청만 도달합니다.
+        String name = request.getParameter("name");
+        String email = request.getParameter("email");
 
----
-
-## 🔌 6. 커스텀 `PolicyValidator` 손쉽게 추가하기 (플러그인 아키텍처 & `RunModePolicyValidator` 예제)
-
-기존 프레임워크(`SecurityFilter`, `ServletPolicyRule`, `SecurityErrorCode`)를 수정하지 않고 **클래스 1개만 새로 작성하면 자동으로 검증 체인에 등록**됩니다.
-
-### 6-1. 3대 확장 메커니즘
-1. **OSGi 동적 멀티 바인딩 (`@Reference(cardinality = MULTIPLE)`)**:
-   - `PolicyValidator` 구현체에 `@Component(service = PolicyValidator.class, immediate = true)`만 붙이면 `SecurityFilter.bindValidator()`가 자동으로 수집하고 `getOrder()` 순으로 정렬합니다.
-2. **스키마리스 확장 속성 (`ServletPolicyRule.extensions`)**:
-   - `.cfg.json`의 정책 객체에 선언된 모든 커스텀 키(예: `"runModes"`, `"blockedRunModes"`, `"requiredHeader"`)는 자동으로 `ServletPolicyRule`의 `extensions` 맵에 파싱·상속됩니다.
-   - Validator에서는 `policy.getExtensionLowerSet("runModes")`, `policy.getExtensionString("requiredHeader")`, `policy.getExtensionBoolean("...")` 헬퍼로 즉시 꺼내 쓸 수 있습니다.
-3. **`AbstractPolicyValidator` 추상 베이스 클래스**:
-   - 통과/차단 디버그 로깅과 `ValidationResult` 생성을 내장하여, 하위 클래스는 `doValidate()` 안에서 `pass()`, `block(...)`, `blockCustom(...)`만 호출하면 됩니다.
-
-### 6-2. 예제 1: `RunModePolicyValidator` (내장 구현)
-특정 API를 `author` 또는 `dev` RunMode에서만 허용하거나 `prod`에서 차단하고 싶을 때 `.cfg.json`에 `runModes` / `blockedRunModes`만 추가하면 됩니다:
-
-```json
-{
-  "target": "/aemapi/admin/reindex",
-  "runModes": ["author", "dev"],
-  "blockedRunModes": ["prod"],
-  "methods": ["POST"]
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"status\":\"success\"}");
+    }
 }
 ```
 
-### 6-3. 예제 2: 15줄로 새로운 커스텀 Validator 추가하기
+---
+
+## 🔌 7. 커스텀 `PolicyValidator` 플러그인 추가 가이드
+
+기존 `SecurityFilter`나 `ServletPolicyRule`을 전혀 수정하지 않고 **클래스 1개만 작성하면 OSGi가 자동으로 검증 체인에 등록**합니다:
+
 ```java
+package com.example.security.validators;
+
+import com.example.security.models.ServletPolicyRule;
+import com.example.security.models.ServletSecurityConfig;
+import org.osgi.service.component.annotations.Component;
+
+import javax.servlet.http.HttpServletRequest;
+
 @Component(service = PolicyValidator.class, immediate = true)
 public class ApiKeyPolicyValidator extends AbstractPolicyValidator {
 
     public ApiKeyPolicyValidator() {
-        super("API_KEY", 15); // 이름: "API_KEY", 실행 순서: 15 (Referer 다음, Method 이전)
+        super("API_KEY", 14); // 실행 순서 14: AUTH(12) 다음, CSRF(15) 이전 실행
     }
 
     @Override
     protected ValidationResult doValidate(HttpServletRequest req, ServletPolicyRule policy, ServletSecurityConfig root) {
         String requiredHeader = policy.getExtensionString("requiredHeader");
         if (requiredHeader != null && req.getHeader(requiredHeader) == null) {
-            return blockCustom(policy, 401, "SEC-40101",
+            return blockCustom(policy, 401, "SEC-40102",
                     "requiredHeader=" + requiredHeader,
-                    "Missing required header: " + requiredHeader,
+                    "Missing required API key header: " + requiredHeader,
                     "Unauthorized: Missing header " + requiredHeader);
         }
         return pass();
     }
 }
 ```
-
-### 6-4. 신규 Validator 추가 시 수정 필요 항목 체크리스트 (`RunModePolicyValidator` 실제 적용 예시)
-
-단순 외부 플러그인 형태라면 Validator 클래스 1개 작성만으로 OSGi 런타임(`@Reference(cardinality = MULTIPLE)`)에 자동 등록되지만, **`RunModePolicyValidator`처럼 프로젝트 기본 내장(Built-in) Validator로 추가하고 전역 기본 정책(`default.runModes`) 및 표준 에러 코드(`SEC-40305`)를 함께 연동할 때**는 아래 파일들을 수정합니다:
-
-| 순서 | 수정 대상 파일 및 위치 | `RunModePolicyValidator` 실제 반영 내용 | 필수 여부 |
-| :---: | :--- | :--- | :---: |
-| **1** | **`RunModePolicyValidator.java`**<br>(신규 Validator 클래스 작성) | • `AbstractPolicyValidator` 상속 (`super("RUNMODE", 5)`) 및 `@Component(service = PolicyValidator.class, immediate = true)` 선언<br>• `policy.getExtensionLowerSet("runModes", ...)`으로 `.cfg.json` 설정 조회 후 `pass()` / `block(...)` 반환 | **필수** |
-| **2** | **`SecurityFilter.java`**<br>기본 생성자 `public SecurityFilter()` | • `registerValidator(new RunModePolicyValidator());` 추가<br>• OSGi 컨테이너 외부(JUnit 단위 테스트에서 `new SecurityFilter()` 생성 등)에서도 기본 검증기 체인에 즉시 포함되도록 등록 | **필수 권장** |
-| **3** | **`SecurityErrorCode.java`**<br>`enum SecurityErrorCode` | • `RUNMODE_NOT_ALLOWED(403, "SEC-40305", "Forbidden: Endpoint is not permitted in current runmode")` 상수 추가<br>• (`blockCustom(...)` 사용 시 생략 가능) | 선택<br>(표준 코드 사용 시) |
-| **4** | **`SecurityFilter.java`**<br>`@interface Config` & `buildDefaultPolicy(Config)` | • 전역 OSGi 설정(`SecurityFilter.config`)의 `default.runModes` 값을 읽어 모든 서블릿 정책이 기본 상속받도록 연동:<br>① `Config`에 `String[] default_runModes() default {};` 추가<br>② `buildDefaultPolicy(Config)`에서 `rule.putExtension("runModes", runModes)`로 `defaultPolicy`에 주입 | 선택<br>(전역 `default.*` 필요 시) |
-| **5** | **`SecurityFilter.config`** 및<br>**`EndpointPolicyConfig~*.cfg.json`** | • 전역 기본 설정: `SecurityFilter.config`에 `default.runModes=[]` 추가<br>• 서블릿별 정책: 각 번들의 `.cfg.json`에 `"runModes": ["author", "dev"]`, `"blockedRunModes": ["prod"]` 추가 | 선택<br>(정책 설정 시) |
-
-#### 💡 `RunModePolicyValidator` 추가 시 실제 코드 수정 내역 요약
-
-**① `SecurityErrorCode.java` — 표준 에러 코드 추가**
-```java
-public enum SecurityErrorCode {
-    // 403 Forbidden
-    REFERER_UNTRUSTED(403, "SEC-40303", "Forbidden: Invalid or untrusted Referer"),
-    RUNMODE_NOT_ALLOWED(403, "SEC-40305", "Forbidden: Endpoint is not permitted in current runmode"), // <-- 추가
-    // ...
-}
-```
-
-**② `SecurityFilter.java` — 기본 생성자 등록 및 전역 `default.runModes` 연동**
-```java
-// 1) 기본 생성자에 RunModePolicyValidator 등록 (단위 테스트 및 비-OSGi 환경 호환)
-public SecurityFilter() {
-    registerValidator(new RunModePolicyValidator()); // <-- 추가 (order=5로 가장 먼저 실행)
-    registerValidator(new RefererPolicyValidator());
-    registerValidator(new MethodPolicyValidator());
-    registerValidator(new ParamPolicyValidator());
-}
-
-// 2) (선택) 전역 기본 정책(default.runModes) 속성을 Config에 정의
-@ObjectClassDefinition(name = "AEM Lightweight Security Filter Configuration")
-public @interface Config {
-    // ...
-    @AttributeDefinition(
-            name = "Default Policy: Allowed RunModes",
-            description = "Default allowed AEM run modes (e.g. author, publish, dev, stage, prod). Empty allows all run modes."
-    )
-    String[] default_runModes() default {};
-}
-
-// 3) (선택) buildDefaultPolicy()에서 defaultPolicy의 extensions 맵에 "runModes" 주입 (하위 서블릿 자동 상속)
-private ServletPolicyRule buildDefaultPolicy(final Config config) {
-    ServletPolicyRule rule = new ServletPolicyRule();
-    rule.setTarget("DEFAULT");
-    if (config != null) {
-        rule.setEnabled(config.default_enabled());
-        if (config.default_runModes() != null && config.default_runModes().length > 0) {
-            List<String> runModes = new ArrayList<>();
-            for (String rm : config.default_runModes()) {
-                if (StringUtils.isNotBlank(rm)) {
-                    runModes.add(rm.trim().toLowerCase());
-                }
-            }
-            if (!runModes.isEmpty()) {
-                rule.putExtension("runModes", runModes); // <-- 하위 정책으로 자동 상속됨
-            }
-        }
-        // ...
-    }
-    rule.init();
-    return rule;
-}
-```
-
-**③ `config/com.example.security.filters.SecurityFilter.config` 및 `.cfg.json` 설정**
-```ini
-# SecurityFilter.config (전역 기본값)
-default.runModes=[]
-```
-```json
-// EndpointPolicyConfig~core-member.cfg.json (개별 서블릿 정책)
-{
-  "target": "/aemapi/admin/reindex",
-  "runModes": ["author", "dev"],
-  "blockedRunModes": ["prod"],
-  "methods": ["POST"]
-}
-```
+이제 `.cfg.json`에 `"requiredHeader": "X-Partner-Key"`만 추가하면 즉시 동작합니다.
 
 ---
 
-## 🚨 7. 차단 시 로그 출력 예시 (`BlockedByConfig` & `AppliedServletPolicy`)
+## 📋 8. 표준 보안 에러 코드 (`SecurityErrorCode`) 및 로그 출력 포맷
 
-요청이 필터에 의해 차단되면 **어떤 설정 규칙과 입력값 때문에 막혔는지(`BlockedByConfig`)**와 **해당 서블릿에 적용된 전체 보안 설정(`AppliedServletPolicy`)**이 동시에 출력됩니다:
+### 8-1. 전체 에러 코드 일람 ([SecurityErrorCode.java](src/main/java/com/example/security/models/SecurityErrorCode.java))
 
-```text
-SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/user/contact], Validator=[PARAM], Status=[400], ErrorCode=[SEC-40003], Reason=[Parameter [name] length (1) < min (2)]
-  | BlockedByConfig=[param=name, minLength=2, actualLength=1, rule={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}]
-  | AppliedServletPolicy=[source=EndpointPolicyConfig~core-member, target=/aemapi/user/contact, methods=[POST], allowedReferrers=[abc.com, partner.abc.com], allowUndefinedParams=false, params={page={required=false, len=0..5, pattern='^[0-9]+$'}, ..., name={required=true, len=2..20, pattern='^[가-힣a-zA-Z\s]+$'}, email={required=true, len=0..50, pattern='^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'}}]
-```
+| 서브 에러 코드 | HTTP 상태 | 열거형 상수명 | 발생 Validator | 기본 응답 메시지 |
+| :---: | :---: | :--- | :---: | :--- |
+| `SEC-40001` | `400` | `PARAM_REQUIRED` | `PARAM` / `RESPONSE` | `Bad Request: Missing required parameter: %s` |
+| `SEC-40002` | `400` | `PARAM_UNDEFINED` | `PARAM` | `Bad Request: Parameter [%s] is not permitted` |
+| `SEC-40003` | `400` | `PARAM_TOO_SHORT` | `PARAM` | `Bad Request: Parameter [%s] is too short (min: %d)` |
+| `SEC-40004` | `400` | `PARAM_TOO_LONG` | `PARAM` | `Bad Request: Parameter [%s] exceeds max length of %d` |
+| `SEC-40005` | `400` | `PARAM_INVALID_FORMAT` | `PARAM` | `Bad Request: Parameter [%s] has invalid format` |
+| `SEC-40006` | `400` | `RESPONSE_TYPE_JSONP_INVALID` | `RESPONSE` | `Bad Request: Invalid JSONP callback parameter: %s` |
+| `SEC-40007` | `400` | `PARAM_PATH_TRAVERSAL` | `PARAM` | `Bad Request: Potential Path Traversal attack detected in parameter [%s]` |
+| `SEC-40010` | `400` | `OPEN_REDIRECT_FORBIDDEN` | `OPEN_REDIRECT` | `Bad Request: Untrusted or invalid redirect URL: %s` |
+| `SEC-40101` | `401` | `AUTH_REQUIRED` | `AUTH` | `Unauthorized: Authentication required` |
+| `SEC-40301` | `403` | `AUTH_TYPE_FORBIDDEN` | `AUTH` | `Forbidden: Access denied for auth type: %s` |
+| `SEC-40302` | `403` | `ROLE_INSUFFICIENT` | `AUTH` | `Forbidden: Insufficient role permissions` |
+| `SEC-40303` | `403` | `REFERER_UNTRUSTED` | `REFERER` | `Forbidden: Invalid or untrusted Referer` |
+| `SEC-40304` | `403` | `CSRF_TOKEN_REQUIRED` | `CSRF` | `Forbidden: CSRF token is required` |
+| `SEC-40305` | `403` | `RUNMODE_NOT_ALLOWED` | `RUNMODE` | `Forbidden: Endpoint is not permitted in current runmode` |
+| `SEC-40306` | `403` | `CSRF_TOKEN_INVALID` | `CSRF` | `Forbidden: Invalid CSRF token` |
+| `SEC-40307` | `403` | `OAUTH_STATE_REQUIRED` | `CSRF` | `Forbidden: OAuth state is required for CSRF validation` |
+| `SEC-40308` | `403` | `OAUTH_STATE_MISMATCH` | `CSRF` | `Forbidden: OAuth state mismatch` |
+| `SEC-40309` | `403` | `GRANITE_CSRF_REQUIRED` | `CSRF` | `Forbidden: Granite CSRF token is required` |
+| `SEC-40310` | `403` | `GRANITE_CSRF_INVALID` | `CSRF` | `Forbidden: Invalid Granite CSRF token` |
+| `SEC-40501` | `405` | `METHOD_NOT_ALLOWED` | `METHOD` | `Method Not Allowed: %s` |
+| `SEC-40601` | `406` | `RESPONSE_TYPE_NOT_ACCEPTABLE` | `RESPONSE` | `Not Acceptable: Client Accept header [%s] incompatible with required responseType [%s]` |
+| `SEC-41301` | `413` | `PAYLOAD_TOO_LARGE` | `PAYLOAD_SIZE` | `Payload Too Large: Request body exceeds maximum allowed size of %d bytes` |
+| `SEC-42901` | `429` | `RATE_LIMIT_EXCEEDED` | `RATE_LIMIT` | `Too Many Requests: Rate limit exceeded for target [%s]. Retry after %d seconds` |
+
+### 8-2. 로그 출력 예시 (서블릿당 1회 단일 디버그 로그 및 WARN 감사 로그)
+
+* **검증 성공 시 (`DEBUG` 1회 출력)**:
+  ```text
+  [SECURITY PASS] target=[/aemapi/user/contact], method=[POST], uri=[/aemapi/user/contact], appliedPolicy=[source=EndpointPolicyConfig~core-member, target=/aemapi/user/contact, enabled=true, extensions={methods=[POST], allowedReferrers=[partner.abc.com], ...}]
+  ```
+* **검증 실패 시 (`DEBUG` 1회 + `WARN` 1회 출력)**:
+  ```text
+  [SECURITY FAIL] target=[/aemapi/user/contact], method=[POST], uri=[/aemapi/user/contact], validator=[PARAM], status=[400], code=[SEC-40003], blockedByConfig=[param=name, minLength=2, actualLength=1, rule={required=true, len=2..20, pattern=^[가-힣a-zA-Z\s]+$}], appliedPolicy=[source=EndpointPolicyConfig~core-member, ...]
+  SECURITY VIOLATION BLOCKED: Client IP=[127.0.0.1], Method=[POST], URI=[/aemapi/user/contact], Validator=[PARAM], Status=[400], ErrorCode=[SEC-40003], Reason=[Parameter [name] length (1) < min (2)] | BlockedByConfig=[...] | AppliedServletPolicy=[...]
+  ```
