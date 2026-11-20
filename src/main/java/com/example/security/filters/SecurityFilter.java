@@ -45,11 +45,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
- * 타겟 기반 서블릿 보안 정책 검증을 수행하는 경량화된 AEM 6.5 Sling 서블릿 필터입니다.
- * 3개의 핵심 PolicyValidator 체인을 순차적으로 실행합니다:
- * 1. RefererPolicyValidator: 기본 도메인(abc.com) 및 정책별 허용 Referer(allowedReferrers) 검증
- * 2. MethodPolicyValidator: 허용된 HTTP 메소드 검증 (GET, POST 등)
- * 3. ParamPolicyValidator: 파라미터 필수 여부, 미정의 파라미터 차단, 길이/정규식 패턴 및 Path Traversal 검증
+ * 타겟 기반 서블릿 보안 정책 검증을 수행하는 AEM 6.5 Sling 서블릿 필터입니다.
+ * <p>
+ * OSGi 컨테이너에서 동적 바인딩된 {@link PolicyValidator} 플러그인 체인을 {@link PolicyValidator#getOrder()}
+ * 오름차순으로 실행하여 서블릿별 보안 정책({@code .cfg.json})을 검증합니다.
  */
 @Component(
         service = Filter.class,

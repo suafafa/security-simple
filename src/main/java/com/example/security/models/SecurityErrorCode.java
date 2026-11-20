@@ -1,8 +1,8 @@
 package com.example.security.models;
 
 /**
- * 경량 보안 필터(Method, Param, Referer)에서 사용하는 표준 보안 에러 코드(SEC-XXXXX),
- * HTTP 상태 코드 및 응답 메시지 템플릿을 정의하는 열거형입니다.
+ * 서블릿 보안 필터 및 {@link com.example.security.validators.PolicyValidator} 체인에서 사용하는
+ * 표준 보안 에러 코드(SEC-XXXXX), HTTP 상태 코드 및 응답 메시지 템플릿을 정의하는 열거형입니다.
  */
 public enum SecurityErrorCode {
 

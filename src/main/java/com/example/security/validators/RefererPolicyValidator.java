@@ -14,7 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * HTTP Referer 및 Origin 헤더가 허용 도메인 목록(allowedReferrers — 기본 정책 default.referrers 상속 포함)과
+ * HTTP Referer 및 Origin 헤더가 허용 도메인 목록({@code allowedReferrers} — 기본 정책 {@code default.referrers} 상속 포함)과
  * 일치하는지 검증하는 모듈형 검증기입니다.
  */
 @Component(service = PolicyValidator.class, immediate = true)
@@ -27,6 +27,12 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         super(NAME, ORDER);
     }
 
+    /**
+     * 서블릿 정책의 {@code extensions} 맵에서 허용된 Referer 도메인 집합(소문자)을 추출합니다.
+     *
+     * @param policy 대상 서블릿 보안 정책 규칙
+     * @return 허용된 Referer 도메인 Set
+     */
     public static Set<String> getAllowedReferrers(final ServletPolicyRule policy) {
         if (policy == null) {
             return Collections.emptySet();
@@ -34,6 +40,10 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return policy.getExtensionLowerSet("allowedReferrers");
     }
 
+    /**
+     * 요청의 Referer(또는 Origin) 헤더를 추출하여 허용된 도메인인지 검증합니다.
+     * 헤더가 누락되었거나 허용 도메인 목록과 일치하지 않으면 403 Forbidden (SEC-40303)으로 차단합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -58,6 +68,9 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * 요청의 Referer 또는 Origin 헤더에서 호스트명을 추출하여 허용 도메인 목록(allowedReferrers)과 일치하는지 판별합니다.
+     */
     public boolean isRefererAllowed(final HttpServletRequest request,
                                     final ServletPolicyRule policy,
                                     final ServletSecurityConfig rootConfig) {
@@ -82,6 +95,9 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return false;
     }
 
+    /**
+     * 기본 정책({@code defaultPolicy})의 허용 도메인과 개별 서블릿 정책의 허용 도메인을 병합하여 반환합니다.
+     */
     public static Set<String> resolveEffectiveReferrers(final ServletPolicyRule policy, final ServletSecurityConfig rootConfig) {
         Set<String> effective = new LinkedHashSet<>();
         if (rootConfig != null && rootConfig.getDefaultPolicy() != null) {
@@ -96,6 +112,9 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         return Collections.unmodifiableSet(effective);
     }
 
+    /**
+     * Referer/Origin URL 문자열에서 소문자 호스트명(Host)을 추출합니다.
+     */
     private String extractHost(final String refererUrl) {
         try {
             URI uri = new URI(refererUrl);
@@ -106,6 +125,9 @@ public class RefererPolicyValidator extends AbstractPolicyValidator {
         }
     }
 
+    /**
+     * 요청 호스트명이 허용 도메인(서브도메인 포함)과 일치하는지 확인합니다.
+     */
     private boolean isDomainMatched(final String host, final String domain) {
         if (StringUtils.isBlank(domain) || host == null) {
             return false;

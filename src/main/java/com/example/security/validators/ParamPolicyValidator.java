@@ -13,7 +13,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * 요청 파라미터에 대한 다중 계층 보안 검증을 수행하는 모듈형 검증기입니다.
+ * 요청 파라미터에 대한 다중 계층 보안 검증을 수행하는 모듈형 검증기입니다:
+ * <ul>
+ *   <li>정의되지 않은 파라미터({@code allowUndefinedParams}) 허용 여부 검사 (기본값: false 차단)</li>
+ *   <li>필수 파라미터({@code required}) 존재 여부 검사</li>
+ *   <li>경로 조작(Path Traversal, CWE-22) 공격 탐지 및 차단</li>
+ *   <li>최소/최대 글자 수({@code minLength}, {@code maxLength}) 제한 검사</li>
+ *   <li>정규식 패턴({@code pattern}) 일치 검사</li>
+ * </ul>
  */
 @Component(service = PolicyValidator.class, immediate = true)
 public class ParamPolicyValidator extends AbstractPolicyValidator {
@@ -25,6 +32,12 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         super(NAME, ORDER);
     }
 
+    /**
+     * 서블릿 정책에서 정의되지 않은 파라미터 허용 여부({@code allowUndefinedParams})를 조회합니다.
+     *
+     * @param policy 대상 서블릿 보안 정책 규칙
+     * @return 미정의 파라미터 허용 시 true (기본값 false)
+     */
     public static boolean isAllowUndefinedParams(final ServletPolicyRule policy) {
         if (policy == null) {
             return false;
@@ -33,10 +46,23 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         return val != null && val;
     }
 
+    /**
+     * 서블릿 정책에 정의된 파라미터 검증 규칙 맵을 추출합니다.
+     *
+     * @param policy 대상 서블릿 보안 정책 규칙
+     * @return 파라미터명을 키로 하는 {@link ParamRule} 맵
+     */
     public static Map<String, ParamRule> getParams(final ServletPolicyRule policy) {
         return ParamRule.extractParams(policy);
     }
 
+    /**
+     * 서블릿 정책의 파라미터 규칙과 기본 정책({@code defaultPolicy})의 공통 파라미터 규칙을 병합하여 반환합니다.
+     *
+     * @param policy     대상 서블릿 보안 정책 규칙
+     * @param rootConfig 루트 서블릿 보안 설정
+     * @return 병합된 파라미터 규칙 맵
+     */
     public static Map<String, ParamRule> resolveParams(final ServletPolicyRule policy,
                                                        final ServletSecurityConfig rootConfig) {
         Map<String, ParamRule> childParams = ParamRule.extractParams(policy);
@@ -47,6 +73,10 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         return childParams;
     }
 
+    /**
+     * 요청 파라미터 전체를 대상으로 필수 여부, 미정의 파라미터 차단, Path Traversal,
+     * 최소/최대 글자 수, 정규식 패턴을 순차적으로 검증합니다.
+     */
     @Override
     protected ValidationResult doValidate(final HttpServletRequest request,
                                           final ServletPolicyRule policy,
@@ -135,6 +165,7 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
                         if (val == null) {
                             continue;
                         }
+                        // 경로 조작(Path Traversal / Directory Traversal) 탐지
                         if (!rule.isAllowPathTraversal() && isPathTraversalAttack(val)) {
                             String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
                                     + ", allowPathTraversal=false, rule=" + rule.toSummaryString()
@@ -149,6 +180,7 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
                             );
                         }
 
+                        // 최소 글자 수(minLength) 제한 검사
                         if (rule.getMinLength() != null && val.length() < rule.getMinLength()) {
                             String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
                                     + ", minLength=" + rule.getMinLength()
@@ -164,6 +196,7 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
                             );
                         }
 
+                        // 최대 글자 수(maxLength) 제한 검사
                         if (rule.getMaxLength() != null && val.length() > rule.getMaxLength()) {
                             String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
                                     + ", maxLength=" + rule.getMaxLength()
@@ -179,6 +212,7 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
                             );
                         }
 
+                        // 정규식 패턴(pattern) 일치 검사
                         if (rule.getCompiledPattern() != null && !rule.getCompiledPattern().matcher(val).matches()) {
                             String blockedConfig = "param=" + SecurityUtils.sanitizeForLog(paramName)
                                     + ", pattern=" + rule.getPattern()
@@ -201,6 +235,12 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
         return pass();
     }
 
+    /**
+     * CWE-22: 파라미터 값에 경로 조작(Path Traversal / Directory Traversal) 공격 패턴이 포함되어 있는지 검사합니다.
+     *
+     * @param value 검증할 파라미터 값
+     * @return 경로 조작 공격 시그니처가 감지되면 true (위험), 정상이면 false (안전)
+     */
     public static boolean isPathTraversalAttack(final String value) {
         if (StringUtils.isBlank(value)) {
             return false;
@@ -234,6 +274,9 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
                 || (!decoded2.equals(decoded1) && containsDotDotSlash(decoded2));
     }
 
+    /**
+     * 문자열 내에 상위 디렉토리 이동 시퀀스({@code ../}, {@code ..\}, {@code ..;} 등)가 포함되어 있는지 검사합니다.
+     */
     private static boolean containsDotDotSlash(final String str) {
         if (str == null || str.isEmpty()) {
             return false;
@@ -250,6 +293,9 @@ public class ParamPolicyValidator extends AbstractPolicyValidator {
                 || str.contains("..;");
     }
 
+    /**
+     * 잘못된 % 인코딩 문자열이 들어와도 예외 없이 안전하게 URL 디코딩을 수행합니다.
+     */
     private static String safeUrlDecode(final String input) {
         if (input == null || (input.indexOf('%') == -1 && input.indexOf('+') == -1)) {
             return input;

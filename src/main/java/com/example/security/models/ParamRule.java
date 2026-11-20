@@ -25,32 +25,47 @@ public class ParamRule {
     private static final Gson GSON = new Gson();
     private static final Type MAP_TYPE = new TypeToken<Map<String, Object>>() {}.getType();
 
+    /** 이 파라미터 검증 규칙의 활성화 여부 (기본값: true) */
     @SerializedName("enabled")
     private Boolean enabled = true;
 
+    /** 필수 파라미터 여부 (기본값: false) */
     @SerializedName("required")
     private Boolean required = false;
 
+    /** 허용 최소 글자 수 (미설정 시 null) */
     @SerializedName("minLength")
     private Integer minLength;
 
+    /** 허용 최대 글자 수 (미설정 시 null) */
     @SerializedName("maxLength")
     private Integer maxLength;
 
+    /** 파라미터 값 검증용 정규식 패턴 문자열 */
     @SerializedName("pattern")
     private String pattern;
 
+    /** 경로 조작(Path Traversal: ../ 등) 구문 예외 허용 여부 (기본값: false 차단) */
     @SerializedName("allowPathTraversal")
     private Boolean allowPathTraversal = false;
 
+    // 런타임 정규식 매칭 성능 최적화를 위한 사전 컴파일 캐시
     private transient Pattern compiledPattern;
 
+    /**
+     * 설정된 정규식 문자열(pattern)을 사전 컴파일하여 런타임 캐시에 저장합니다.
+     */
     public void init() {
         if (StringUtils.isNotBlank(pattern)) {
             this.compiledPattern = Pattern.compile(pattern.trim());
         }
     }
 
+    /**
+     * 현재 {@link ParamRule}의 모든 설정값을 깊은 복사(Deep Copy)한 새 인스턴스를 반환합니다.
+     *
+     * @return 복사된 {@link ParamRule} 객체
+     */
     public ParamRule copy() {
         ParamRule cloned = new ParamRule();
         cloned.enabled = this.enabled;
@@ -63,6 +78,13 @@ public class ParamRule {
         return cloned;
     }
 
+    /**
+     * 파라미터 규칙의 정규식 문법 및 최소/최대 길이 설정의 유효성을 검사합니다.
+     *
+     * @param paramName 파라미터 이름
+     * @param target    서블릿 타겟 식별자
+     * @param errors    검증 오류 메시지를 수집할 리스트
+     */
     public void validate(final String paramName, final String target, final List<String> errors) {
         if (StringUtils.isNotBlank(pattern)) {
             try {
@@ -82,42 +104,52 @@ public class ParamRule {
         }
     }
 
+    /** 이 파라미터 규칙의 활성화 여부를 반환합니다. */
     public boolean isEnabled() {
         return enabled == null || enabled;
     }
 
+    /** 이 파라미터 규칙의 활성화 여부를 설정합니다. */
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
 
+    /** 이 파라미터가 필수(required)인지 반환합니다. */
     public boolean isRequired() {
         return required != null && required;
     }
 
+    /** 이 파라미터의 필수 여부를 설정합니다. */
     public void setRequired(Boolean required) {
         this.required = required;
     }
 
+    /** 허용되는 최소 글자 수(minLength)를 반환합니다. */
     public Integer getMinLength() {
         return minLength;
     }
 
+    /** 허용되는 최소 글자 수(minLength)를 설정합니다. */
     public void setMinLength(Integer minLength) {
         this.minLength = minLength;
     }
 
+    /** 허용되는 최대 글자 수(maxLength)를 반환합니다. */
     public Integer getMaxLength() {
         return maxLength;
     }
 
+    /** 허용되는 최대 글자 수(maxLength)를 설정합니다. */
     public void setMaxLength(Integer maxLength) {
         this.maxLength = maxLength;
     }
 
+    /** 파라미터 값 검증용 정규식 패턴 문자열을 반환합니다. */
     public String getPattern() {
         return pattern;
     }
 
+    /** 파라미터 값 검증용 정규식 패턴 문자열을 설정하고 즉시 컴파일합니다. */
     public void setPattern(String pattern) {
         this.pattern = pattern;
         if (StringUtils.isNotBlank(pattern)) {
@@ -128,6 +160,7 @@ public class ParamRule {
         }
     }
 
+    /** 사전 컴파일된 정규식 {@link Pattern} 객체를 반환합니다. */
     public Pattern getCompiledPattern() {
         if (compiledPattern == null && StringUtils.isNotBlank(pattern)) {
             compiledPattern = Pattern.compile(pattern.trim());
@@ -135,14 +168,21 @@ public class ParamRule {
         return compiledPattern;
     }
 
+    /** 해당 파라미터에 대해 경로 조작(Path Traversal) 구문 허용 여부를 반환합니다. */
     public boolean isAllowPathTraversal() {
         return allowPathTraversal != null && allowPathTraversal;
     }
 
+    /** 해당 파라미터에 대해 경로 조작(Path Traversal) 구문 허용 여부를 설정합니다. */
     public void setAllowPathTraversal(Boolean allowPathTraversal) {
         this.allowPathTraversal = allowPathTraversal;
     }
 
+    /**
+     * 로그 출력을 위해 이 파라미터 규칙의 핵심 제약조건(필수 여부, 길이 범위, 정규식)을 요약 문자열로 반환합니다.
+     *
+     * @return 파라미터 규칙 요약 문자열
+     */
     public String toSummaryString() {
         StringBuilder sb = new StringBuilder("{");
         sb.append("required=").append(isRequired());
@@ -172,6 +212,9 @@ public class ParamRule {
     /**
      * {@link ServletPolicyRule}의 {@code extensions} 맵에서 {@code params} 및 {@code requiredParams}를 추출하여
      * {@code Map<String, ParamRule>}로 파싱합니다.
+     *
+     * @param policy 대상 서블릿 보안 정책 규칙
+     * @return 파라미터명을 키(대소문자 구분)로 하는 {@link ParamRule} 맵
      */
     public static Map<String, ParamRule> extractParams(final ServletPolicyRule policy) {
         if (policy == null) {
@@ -198,6 +241,11 @@ public class ParamRule {
 
     /**
      * 개별 서블릿의 파라미터 규칙과 기본 정책({@code defaultPolicy})의 공통 파라미터 규칙을 병합합니다.
+     * 개별 서블릿에 정의된 규칙이 우선하며, 미지정된 길이/정규식 제약만 기본 정책으로부터 보완 상속받습니다.
+     *
+     * @param childParams  개별 서블릿의 파라미터 규칙 맵
+     * @param parentParams 기본 정책(defaultPolicy)의 파라미터 규칙 맵
+     * @return 병합된 파라미터 규칙 맵
      */
     public static Map<String, ParamRule> mergeWithDefault(final Map<String, ParamRule> childParams,
                                                           final Map<String, ParamRule> parentParams) {
@@ -234,6 +282,9 @@ public class ParamRule {
         return Collections.unmodifiableMap(merged);
     }
 
+    /**
+     * 정책 확장 맵에서 지정된 키들의 파라미터 정의(DSL 문자열, 배열, JSON 객체, Map 등)를 파싱하여 {@code targetMap}에 병합합니다.
+     */
     public static void parseParamEntriesIntoMap(final Map<String, Object> props,
                                                 final Map<String, ParamRule> targetMap,
                                                 final String... keys) {
@@ -258,6 +309,9 @@ public class ParamRule {
         }
     }
 
+    /**
+     * 단일 파라미터 요소(DSL 문자열, JSON 문자열, 또는 JSON 객체 Map)를 파싱하여 {@code targetMap}에 추가합니다.
+     */
     private static void parseSingleParamElement(Object item, final Map<String, ParamRule> targetMap) {
         if (item == null) {
             return;
@@ -305,6 +359,10 @@ public class ParamRule {
         }
     }
 
+    /**
+     * {@code "params": [ { "name": "userId", "required": true, "type": "alnum", "maxLength": 20 } ]} 형태의
+     * 개별 JSON 객체 Map 요소를 파싱합니다.
+     */
     private static void parseParamObjectMapElement(final Map<?, ?> itemMap, final Map<String, ParamRule> targetMap) {
         if (itemMap == null || itemMap.isEmpty()) {
             return;
@@ -328,6 +386,9 @@ public class ParamRule {
         }
     }
 
+    /**
+     * {@code "params": { "userId": { "required": true, ... }, "email": "required:email:50" }} 형태의 Map을 파싱합니다.
+     */
     private static void parseParamMapObject(final Map<?, ?> rawParams, final Map<String, ParamRule> targetMap) {
         for (Map.Entry<?, ?> pe : rawParams.entrySet()) {
             if (pe.getKey() == null || pe.getValue() == null) {
@@ -359,6 +420,9 @@ public class ParamRule {
         }
     }
 
+    /**
+     * JSON 객체 Map에서 {@link ParamRule}을 생성합니다.
+     */
     private static ParamRule buildParamRuleFromMap(final Map<String, Object> map) {
         ParamRule rule = new ParamRule();
 
@@ -394,6 +458,9 @@ public class ParamRule {
         return rule;
     }
 
+    /**
+     * Map에서 정수형 속성값을 추출합니다 (키 대소문자 무시).
+     */
     private static Integer extractInteger(final Map<String, Object> props, final String... keys) {
         for (String k : keys) {
             Object val = ServletPolicyRule.findValueIgnoreCase(props, k);
@@ -409,6 +476,9 @@ public class ParamRule {
         return null;
     }
 
+    /**
+     * 소괄호 {@code (...)}, 중괄호 {@code {...}}, 대괄호 {@code [...]} 내부의 구분자는 무시하면서 문자열을 분리합니다.
+     */
     public static List<String> splitPreservingParens(final String input, final char delimiter) {
         List<String> tokens = new ArrayList<>();
         if (input == null) {
@@ -451,6 +521,13 @@ public class ParamRule {
         return tokens;
     }
 
+    /**
+     * 간편 DSL 형식의 파라미터 설정 문자열(예: {@code "userId:required:alnum:4..20"})을 파싱하여
+     * 파라미터 이름과 {@link ParamRule} 엔트리를 생성합니다.
+     *
+     * @param fullSpec 간편 DSL 형식의 파라미터 규칙 문자열
+     * @return 파싱된 {@code (파라미터명, ParamRule)} 엔트리 (유효하지 않으면 null)
+     */
     public static Map.Entry<String, ParamRule> parseSimpleParamSpec(final String fullSpec) {
         if (StringUtils.isBlank(fullSpec)) {
             return null;
@@ -498,6 +575,9 @@ public class ParamRule {
         return new AbstractMap.SimpleEntry<>(paramName, rule);
     }
 
+    /**
+     * 개별 DSL 토큰(필수 여부, 내장 타입 별칭, 길이 범위, 커스텀 정규식 등)을 {@link ParamRule}에 반영합니다.
+     */
     private static void applyDslToken(final ParamRule rule, final String token, final List<String> parts, final int index) {
         if ("required".equalsIgnoreCase(token) || "req".equalsIgnoreCase(token)
                 || "mandatory".equalsIgnoreCase(token) || "required=true".equalsIgnoreCase(token)

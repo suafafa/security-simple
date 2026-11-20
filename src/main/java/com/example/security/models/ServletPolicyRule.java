@@ -25,32 +25,42 @@ import java.util.regex.Pattern;
 /**
  * 특정 타겟(URL 경로 또는 Sling resourceType)에 대한 보안 정책 규칙 컨테이너 모델입니다.
  * <p>
- * 특정 {@code PolicyValidator}에 종속된 필드를 가지지 않으며, 공통 라우팅/제어 메타데이터({@code target},
- * {@code enabled}, {@code mode})와 각 Validator가 자유롭게 조회하는 {@code extensions} 맵만 관리합니다.
+ * 특정 {@link com.example.security.validators.PolicyValidator}에 종속된 필드를 가지지 않으며,
+ * 공통 라우팅/제어 메타데이터({@code target}, {@code enabled}, {@code mode})와
+ * 각 Validator가 자유롭게 조회하는 {@code extensions} 맵만 관리합니다.
  */
 public class ServletPolicyRule {
 
     private static final Gson GSON = new Gson();
     private static final Type MAP_TYPE = new TypeToken<Map<String, Object>>() {}.getType();
 
+    // 기본 내장 메타데이터 키 집합 (이 외의 모든 JSON 키는 extensions 맵에 자동 저장됨)
     private static final Set<String> BUILT_IN_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "target", "enabled", "mode", "extensions"
     )));
 
+    /** 정책이 적용될 서블릿 경로(예: "/aemapi/user/contact") 또는 Sling resourceType */
     @SerializedName("target")
     private String target;
 
+    /** 개별 서블릿 정책 활성화 여부 (false 설정 시 해당 서블릿 검증 생략) */
     @SerializedName("enabled")
     private Boolean enabled = true;
 
+    /** 개별 서블릿 보안 실행 모드 ("ENFORCE": 위반 시 차단, "MONITOR": 위반 시 WARN 로그만 기록 후 통과) */
     @SerializedName("mode")
     private String mode;
 
+    /** 각 PolicyValidator가 참조하는 설정 속성 맵 (예: methods, allowedReferrers, params, runModes, auth, csrf 등) */
     @SerializedName("extensions")
     private Map<String, Object> extensions;
 
+    // 와일드카드/정규식 타겟 매칭을 위한 런타임 컴파일 캐시
     private transient Pattern compiledTargetPattern;
 
+    /**
+     * 타겟 정규식 패턴을 사전 컴파일하고 실행 모드 정규화 및 설정값 유효성 검증을 수행합니다.
+     */
     public void init() {
         if (StringUtils.isNotBlank(target) && (target.contains("*") || target.contains("^") || target.contains("$"))) {
             try {
@@ -68,10 +78,20 @@ public class ServletPolicyRule {
         }
     }
 
+    /**
+     * 로그 및 에러 메시지 출력에 사용할 타겟 식별자를 반환합니다.
+     *
+     * @return 타겟 문자열 (비어 있을 경우 "(defaultPolicy)")
+     */
     public String getTargetIdentifier() {
         return StringUtils.isNotBlank(target) ? target : "(defaultPolicy)";
     }
 
+    /**
+     * 타겟 정규식(Target Regex) 문법이 유효한지 검증합니다.
+     *
+     * @param errors 검증 오류 메시지를 수집할 리스트
+     */
     public void validate(final List<String> errors) {
         String id = getTargetIdentifier();
         if (StringUtils.isNotBlank(target) && (target.contains("*") || target.contains("^") || target.contains("$"))) {
@@ -83,6 +103,12 @@ public class ServletPolicyRule {
         }
     }
 
+    /**
+     * 유입된 HTTP 요청이 이 정책 규칙의 타겟(URL 경로 또는 Sling resourceType)과 일치하는지 확인합니다.
+     *
+     * @param request 검사할 HTTP 요청 객체
+     * @return 요청이 타겟과 일치하면 true, 그렇지 않으면 false
+     */
     public boolean matches(final HttpServletRequest request) {
         if (StringUtils.isBlank(target) || request == null) {
             return false;
@@ -118,26 +144,56 @@ public class ServletPolicyRule {
         return requestUri != null && requestUri.contains(target.trim());
     }
 
+    /**
+     * 컴파일된 타겟 정규식 패턴 객체를 반환합니다.
+     *
+     * @return 컴파일된 {@link Pattern} (정규식 타겟이 아닐 경우 null)
+     */
     public Pattern getCompiledTargetPattern() {
         return compiledTargetPattern;
     }
 
+    /**
+     * 정책이 적용될 타겟(서블릿 경로 또는 Sling resourceType)을 반환합니다.
+     *
+     * @return 타겟 문자열
+     */
     public String getTarget() {
         return target;
     }
 
+    /**
+     * 정책이 적용될 타겟(서블릿 경로 또는 Sling resourceType)을 설정합니다.
+     *
+     * @param target 설정할 타겟 문자열
+     */
     public void setTarget(String target) {
         this.target = target;
     }
 
+    /**
+     * 이 보안 정책 규칙의 활성화 여부를 반환합니다.
+     *
+     * @return 활성화 상태이면 true (기본값 true)
+     */
     public boolean isEnabled() {
         return enabled == null || enabled;
     }
 
+    /**
+     * 이 보안 정책 규칙의 활성화 여부를 설정합니다.
+     *
+     * @param enabled 활성화 여부
+     */
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
 
+    /**
+     * 이 서블릿 정책에 설정된 실행 모드({@code "ENFORCE"} 또는 {@code "MONITOR"})를 반환합니다.
+     *
+     * @return 설정된 모드 문자열 (미설정 시 null)
+     */
     public String getMode() {
         if (StringUtils.isBlank(mode)) {
             return null;
@@ -145,6 +201,11 @@ public class ServletPolicyRule {
         return "MONITOR".equalsIgnoreCase(mode.trim()) ? "MONITOR" : "ENFORCE";
     }
 
+    /**
+     * 문자열({@code "ENFORCE"} 또는 {@code "MONITOR"})로 이 서블릿 정책의 모드를 설정합니다.
+     *
+     * @param mode 설정할 모드 문자열
+     */
     public void setMode(final String mode) {
         if (StringUtils.isBlank(mode)) {
             this.mode = null;
@@ -153,14 +214,30 @@ public class ServletPolicyRule {
         }
     }
 
+    /**
+     * 각 {@link com.example.security.validators.PolicyValidator}에서 참조하는 확장 설정 맵을 반환합니다.
+     *
+     * @return 확장 설정 맵 (없으면 빈 Map)
+     */
     public Map<String, Object> getExtensions() {
         return extensions != null ? Collections.unmodifiableMap(extensions) : Collections.emptyMap();
     }
 
+    /**
+     * 확장 설정 맵을 설정합니다.
+     *
+     * @param extensions 설정할 확장 속성 맵
+     */
     public void setExtensions(Map<String, Object> extensions) {
         this.extensions = extensions != null ? new LinkedHashMap<>(extensions) : null;
     }
 
+    /**
+     * 확장 속성을 단일 키-값으로 추가합니다.
+     *
+     * @param key   속성 키 (예: "methods", "allowedReferrers", "params", "runModes")
+     * @param value 속성 값
+     */
     public void putExtension(String key, Object value) {
         if (StringUtils.isBlank(key) || value == null) {
             return;
@@ -171,6 +248,12 @@ public class ServletPolicyRule {
         this.extensions.put(key.trim(), value);
     }
 
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 원본 객체 값을 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 매칭된 원본 객체 (미설정 시 null)
+     */
     public Object getExtension(String... keys) {
         if (extensions == null || extensions.isEmpty() || keys == null) {
             return null;
@@ -184,6 +267,12 @@ public class ServletPolicyRule {
         return null;
     }
 
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 값을 문자열 리스트로 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 문자열 리스트 (미설정 시 빈 리스트)
+     */
     public List<String> getExtensionStringList(String... keys) {
         if (extensions == null || extensions.isEmpty() || keys == null) {
             return Collections.emptyList();
@@ -191,6 +280,12 @@ public class ServletPolicyRule {
         return extractStringList(extensions, keys);
     }
 
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 값을 소문자 집합(Set)으로 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 소문자 문자열 Set (미설정 시 빈 Set)
+     */
     public Set<String> getExtensionLowerSet(String... keys) {
         List<String> list = getExtensionStringList(keys);
         if (list.isEmpty()) {
@@ -205,6 +300,12 @@ public class ServletPolicyRule {
         return Collections.unmodifiableSet(set);
     }
 
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들(대소문자 무시) 중 일치하는 값을 대문자 집합(Set)으로 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 대문자 문자열 Set (미설정 시 빈 Set)
+     */
     public Set<String> getExtensionUpperSet(String... keys) {
         List<String> list = getExtensionStringList(keys);
         if (list.isEmpty()) {
@@ -219,11 +320,23 @@ public class ServletPolicyRule {
         return Collections.unmodifiableSet(set);
     }
 
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들 중 일치하는 첫 번째 문자열 값을 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 문자열 (미설정 시 null)
+     */
     public String getExtensionString(String... keys) {
         List<String> list = getExtensionStringList(keys);
         return list.isEmpty() ? null : list.get(0);
     }
 
+    /**
+     * 확장 속성 맵({@code extensions})에서 지정된 키 후보들 중 일치하는 Boolean 값을 조회합니다.
+     *
+     * @param keys 조회할 설정 키 후보 목록
+     * @return 추출된 Boolean 값 (미설정 시 null)
+     */
     public Boolean getExtensionBoolean(String... keys) {
         if (extensions == null || extensions.isEmpty() || keys == null) {
             return null;
@@ -231,6 +344,12 @@ public class ServletPolicyRule {
         return extractBoolean(extensions, keys);
     }
 
+    /**
+     * 상위 정책(주로 {@code defaultPolicy})으로부터 미설정된 실행 모드({@code mode})와
+     * 확장 속성({@code extensions})을 상속받습니다. 현재 규칙에 명시적으로 설정된 속성이 항상 우선합니다.
+     *
+     * @param parent 상속받을 부모 정책 규칙
+     */
     public void inheritFrom(final ServletPolicyRule parent) {
         if (parent == null) {
             return;
@@ -253,6 +372,11 @@ public class ServletPolicyRule {
         }
     }
 
+    /**
+     * 다른 {@link ServletPolicyRule} 객체의 모든 설정 필드를 현재 객체로 복사합니다.
+     *
+     * @param other 복사할 원본 정책 규칙 객체
+     */
     public void copyFrom(final ServletPolicyRule other) {
         if (other == null) {
             return;
@@ -263,6 +387,13 @@ public class ServletPolicyRule {
         this.extensions = other.extensions != null ? new LinkedHashMap<>(other.extensions) : null;
     }
 
+    /**
+     * JSON 정책 객체 맵을 파싱하여 {@link ServletPolicyRule}을 생성합니다.
+     * {@code target}, {@code enabled}, {@code mode}를 제외한 모든 속성은 {@code extensions} 맵에 자동 수집됩니다.
+     *
+     * @param props JSON 정책 객체 맵
+     * @return 파싱된 {@link ServletPolicyRule} 객체
+     */
     private static ServletPolicyRule parseRuleForTarget(final Map<String, Object> props) {
         ServletPolicyRule rule = new ServletPolicyRule();
 
@@ -301,6 +432,14 @@ public class ServletPolicyRule {
         return rule;
     }
 
+    /**
+     * 번들별 {@code .cfg.json}의 {@code policies} 배열 내 단일 JSON 정책 객체를 파싱하여
+     * {@link ServletPolicyRule} 리스트를 생성합니다.
+     *
+     * @param entryObj      {@code policies} 배열의 개별 요소 (Map, JsonElement, 또는 JSON String)
+     * @param defaultPolicy 상속할 기본 정책 규칙 (없으면 null)
+     * @return 파싱 및 초기화된 {@link ServletPolicyRule} 리스트
+     */
     public static List<ServletPolicyRule> fromPolicyJsonEntry(final Object entryObj, final ServletPolicyRule defaultPolicy) {
         if (entryObj == null) {
             return Collections.emptyList();
@@ -330,6 +469,9 @@ public class ServletPolicyRule {
         return result;
     }
 
+    /**
+     * 다양한 타입(Map, JsonElement, JSON 문자열)의 정책 엔트리를 표준 {@code Map<String, Object>}으로 변환합니다.
+     */
     private static Map<String, Object> toPolicyMap(final Object entryObj) {
         if (entryObj instanceof Map<?, ?>) {
             String clsName = entryObj.getClass().getName().toLowerCase();
@@ -361,6 +503,9 @@ public class ServletPolicyRule {
         return null;
     }
 
+    /**
+     * 맵에 지정된 키가 존재하는지 대소문자를 무시하고 확인합니다.
+     */
     static boolean containsKeyIgnoreCase(final Map<String, ?> map, final String key) {
         if (map == null || key == null) {
             return false;
@@ -376,6 +521,9 @@ public class ServletPolicyRule {
         return false;
     }
 
+    /**
+     * 맵에서 대소문자를 구분하지 않고 키에 해당하는 값을 조회합니다.
+     */
     public static Object findValueIgnoreCase(final Map<String, Object> props, final String key) {
         if (props == null || key == null) {
             return null;
@@ -391,6 +539,9 @@ public class ServletPolicyRule {
         return null;
     }
 
+    /**
+     * 프로퍼티 맵에서 지정된 키들의 값을 문자열 리스트로 추출합니다 (배열, 컬렉션, 쉼표 구분 문자열 지원).
+     */
     public static List<String> extractStringList(final Map<String, Object> props, final String... keys) {
         for (String k : keys) {
             Object val = findValueIgnoreCase(props, k);
@@ -432,6 +583,9 @@ public class ServletPolicyRule {
         return Collections.emptyList();
     }
 
+    /**
+     * 프로퍼티 맵에서 지정된 키들의 값을 Boolean으로 추출합니다 (키 대소문자 무시).
+     */
     public static Boolean extractBoolean(final Map<String, Object> props, final String... keys) {
         for (String k : keys) {
             Object val = findValueIgnoreCase(props, k);
@@ -444,6 +598,9 @@ public class ServletPolicyRule {
         return null;
     }
 
+    /**
+     * 문자열 양끝에 감싸진 따옴표({@code "..."} 또는 {@code '...'})를 제거합니다.
+     */
     public static String stripWrappingQuotes(final String input) {
         if (input == null) {
             return "";
@@ -455,6 +612,11 @@ public class ServletPolicyRule {
         return s;
     }
 
+    /**
+     * 해당 서블릿/타겟에 적용된 보안 설정 정보를 사람이 읽기 쉬운 요약 문자열로 반환합니다.
+     *
+     * @return 현재 보안 정책 설정 요약 문자열
+     */
     public String toPolicySummaryString() {
         StringBuilder sb = new StringBuilder();
         sb.append("target=").append(StringUtils.defaultIfBlank(target, "UNKNOWN"));
